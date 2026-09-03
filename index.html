@@ -2,120 +2,256 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>青伴 - 情感陪伴</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f8fc" />
+  <meta name="description" content="青伴——把重要的陪伴，放在身边。" />
+  <title>青伴 · 情感陪伴</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='36' fill='none' stroke='%237b72e9' stroke-width='10'/%3E%3Cpath d='M34 54h31l10 10V38H34z' fill='%23f3a49b'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://unpkg.com" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <div id="app">
-    <header class="top-bar" v-if="currentPage !== 'chat'">
-      <div class="top-bar-title">{{ pageTitle }}</div>
-      <div class="top-bar-actions">
-        <button class="icon-btn" v-if="currentPage === 'chatlist'" @click="goAddCompanion">+</button>
-      </div>
-    </header>
-    <header class="top-bar chat-top-bar" v-if="currentPage === 'chat'">
-      <button class="icon-btn back-btn" @click="goBack">&#8249;</button>
-      <div class="top-bar-title">{{ currentChatName }}</div>
-      <button class="icon-btn" @click="showChatMenu = !showChatMenu">&#8942;</button>
-    </header>
-    <main class="main-content" :class="{ 'with-chat-header': currentPage === 'chat' }">
-      <div v-if="currentPage === 'chatlist'" class="page chatlist-page">
-        <div class="search-bar"><input type="text" placeholder="搜索" v-model="searchQuery" /></div>
-        <div class="chat-list">
-          <div class="chat-item" v-for="companion in filteredCompanions" :key="companion.id" @click="openChat(companion)">
-            <div class="avatar" :style="{ background: companion.avatarColor }">{{ companion.name.charAt(0) }}</div>
-            <div class="chat-info">
-              <div class="chat-name">{{ companion.name }}</div>
-              <div class="chat-last-msg">{{ getLastMessage(companion.id) }}</div>
+  <div id="app" :class="{ 'theme-dim': settings.dimMode }">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true"><span></span><i></i></div>
+          <div>
+            <div class="brand-name">青伴</div>
+            <div class="brand-caption">把重要的陪伴，放在身边</div>
+          </div>
+        </div>
+
+        <div class="sidebar-profile" @click="activeView = 'settings'">
+          <div class="user-avatar">{{ userInitial }}</div>
+          <div class="sidebar-profile-copy">
+            <strong>{{ settings.nickname || '你的名字' }}</strong>
+            <span>{{ settings.signature || '今天也有人在意你' }}</span>
+          </div>
+          <span class="chevron">›</span>
+        </div>
+
+        <nav class="primary-nav" aria-label="主导航">
+          <button v-for="item in navItems" :key="item.id" class="nav-link" :class="{ active: activeView === item.id }" @click="navigate(item.id)">
+            <span class="nav-icon" v-html="icon(item.icon)"></span>
+            <span>{{ item.label }}</span>
+            <em v-if="item.id === 'inbox' && unreadTotal" class="nav-count">{{ unreadTotal }}</em>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="local-badge"><span class="status-dot"></span> 前端演示 · 数据保存在本机</div>
+          <button class="sidebar-help" @click="showAbout = true"><span v-html="icon('sparkle')"></span> 关于青伴</button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar" :class="{ 'is-chat': activeView === 'chat' }">
+          <div class="mobile-brand" v-if="activeView !== 'chat'">
+            <div class="brand-mark small" aria-hidden="true"><span></span><i></i></div>
+            <strong>青伴</strong>
+          </div>
+          <button v-if="activeView === 'chat'" class="back-button" @click="closeChat" aria-label="返回会话列表"><span v-html="icon('arrow-left')"></span></button>
+          <div class="topbar-heading">
+            <div class="eyebrow" v-if="activeView === 'inbox'">{{ greetingText }}</div>
+            <h1>{{ viewTitle }}</h1>
+            <p v-if="activeView === 'inbox'">和你的 AI 好友，聊聊正在发生的事。</p>
+            <p v-if="activeView === 'memories'">让每一次相遇，都有下一次可以接上的地方。</p>
+          </div>
+          <div class="topbar-actions">
+            <button v-if="activeView === 'inbox'" class="round-action" @click="focusSearch" aria-label="搜索会话"><span v-html="icon('search')"></span></button>
+            <button v-if="activeView === 'companions' || activeView === 'friends'" class="primary-action compact" @click="openNewCompanion"><span v-html="icon('plus')"></span> 新建 AI</button>
+            <button v-if="activeView === 'memories'" class="primary-action compact" @click="openNewMemory"><span v-html="icon('plus')"></span> 添加记忆</button>
+            <button v-if="activeView === 'settings'" class="round-action" @click="showAbout = true" aria-label="关于青伴"><span v-html="icon('info')"></span></button>
+          </div>
+        </header>
+
+        <section class="content-area" :class="{ 'chat-content': activeView === 'chat' }">
+          <!-- 会话首页：桌面端为列表 + 欢迎面板，移动端可直接进入聊天 -->
+          <div
+              v-if="activeView === 'inbox'"
+              class="inbox-layout page-enter"
+              :class="{ 'has-active-chat': activeChatId }"
+            >
+            <section class="conversation-panel card-surface">
+              <div class="section-toolbar">
+                <div class="segmented-control" role="tablist" aria-label="会话筛选">
+                  <button :class="{ active: inboxFilter === 'all' }" @click="inboxFilter = 'all'">全部 <span>{{ companions.length }}</span></button>
+                  <button :class="{ active: inboxFilter === 'unread' }" @click="inboxFilter = 'unread'">未读 <span>{{ unreadTotal }}</span></button>
+                </div>
+                <button class="toolbar-icon" @click="openNewCompanion" aria-label="添加 AI 好友"><span v-html="icon('edit')"></span></button>
+              </div>
+              <div class="search-field" ref="searchField">
+                <span v-html="icon('search')"></span>
+                <input v-model="searchQuery" placeholder="搜索昵称或最近消息" aria-label="搜索昵称或最近消息" />
+                <button v-if="searchQuery" @click="searchQuery = ''" aria-label="清除搜索"><span v-html="icon('close')"></span></button>
+              </div>
+              <div class="conversation-list">
+                <button v-for="companion in filteredCompanions" :key="companion.id" class="conversation-row" :class="{ selected: activeChatId === companion.id }" @click="openChat(companion)">
+                  <div class="avatar-wrap">
+                    <div class="avatar" :style="avatarStyle(companion)">{{ companion.initial || companion.name.slice(0, 1) }}</div>
+                    <span class="presence-dot" :class="{ idle: !companion.online }"></span>
+                  </div>
+                  <div class="conversation-copy">
+                    <div class="row-title"><strong>{{ companion.name }}</strong><time>{{ lastMessageTime(companion.id) }}</time></div>
+                    <p>{{ lastMessagePreview(companion.id) }}</p>
+                  </div>
+                  <span v-if="companion.unread" class="unread-dot"></span>
+                </button>
+                <div v-if="filteredCompanions.length === 0" class="empty-list">
+                  <div class="empty-icon"><span v-html="icon('search')"></span></div>
+                  <strong>没有找到相关会话</strong>
+                  <p>换个关键词，或者创建一个新的 AI 好友。</p>
+                </div>
+              </div>
+              <button class="new-companion-card" @click="openNewCompanion">
+                <span class="new-companion-icon"><span v-html="icon('plus')"></span></span>
+                <span><strong>创建新的 AI 好友</strong><small>从一个名字和愿望开始</small></span>
+                <span class="chevron">›</span>
+              </button>
+            </section>
+
+            <section class="home-preview" v-if="!activeChatId">
+              <div class="home-hero card-surface">
+                <div class="hero-orbit orbit-one"></div>
+                <div class="hero-orbit orbit-two"></div>
+                <div class="hero-copy">
+                  <span class="soft-label"><span class="pulse-dot"></span> 今天，青伴在这里</span>
+                  <h2>给情绪一个<br /><em>可以回去的地方。</em></h2>
+                  <p>创建一个懂你的 AI 好友，把重要的偏好、故事与当下心情慢慢交给它记住。</p>
+                  <button class="primary-action" @click="openNewCompanion"><span v-html="icon('sparkle')"></span> 开始创建</button>
+                </div>
+                <div class="hero-illustration" aria-hidden="true">
+                  <div class="illustration-ring"></div>
+                  <div class="illustration-bubble"><span v-html="icon('heart')"></span></div>
+                  <div class="illustration-star star-a">✦</div>
+                  <div class="illustration-star star-b">·</div>
+                  <div class="illustration-face"><span></span><span></span><i></i></div>
+                </div>
+              </div>
+              <div class="home-grid">
+                <button class="insight-card memory-insight" @click="navigate('memories')">
+                  <div class="insight-icon purple"><span v-html="icon('brain')"></span></div>
+                  <div><small>长期记忆</small><strong>{{ memoryCount }} 条记忆</strong><p>让陪伴有迹可循</p></div>
+                  <span class="chevron">›</span>
+                </button>
+                <button class="insight-card proactive-insight" @click="navigate('companions')">
+                  <div class="insight-icon coral"><span v-html="icon('send')"></span></div>
+                  <div><small>主动陪伴</small><strong>{{ proactiveCount }} 位已开启</strong><p>让想念先抵达</p></div>
+                  <span class="chevron">›</span>
+                </button>
+              </div>
+            </section>
+
+            <section v-else class="embedded-chat card-surface page-enter">
+              <chat-view :companion="activeCompanion" :messages="activeMessages" :is-replying="isReplying" :input-message="inputMessage" @update-input="inputMessage = $event" @send="sendMessage" @quick="sendQuickMessage" @proactive="sendProactiveMessage(activeCompanion)" @back="closeChat" @open-settings="openCompanionEditor(activeCompanion)"></chat-view>
+            </section>
+          </div>
+
+          <!-- 独立聊天页（移动端导航 / 直接返回后的路由） -->
+          <div v-if="activeView === 'chat'" class="chat-route page-enter">
+            <chat-view v-if="activeCompanion" :companion="activeCompanion" :messages="activeMessages" :is-replying="isReplying" :input-message="inputMessage" @update-input="inputMessage = $event" @send="sendMessage" @quick="sendQuickMessage" @proactive="sendProactiveMessage(activeCompanion)" @back="closeChat" @open-settings="openCompanionEditor(activeCompanion)"></chat-view>
+          </div>
+
+          <!-- 好友通讯录 -->
+          <div v-if="activeView === 'friends'" class="friends-page page-enter">
+            <div class="page-intro card-surface">
+              <div class="intro-symbol"><span v-html="icon('users')"></span></div>
+              <div><span class="soft-label">你的陪伴圈</span><h2>每一个名字，都是一段关系。</h2><p>青伴把 AI 好友放进熟悉的通讯录里，随时打开一段属于你们的对话。</p></div>
+              <button class="primary-action compact" @click="openNewCompanion"><span v-html="icon('plus')"></span> 添加好友</button>
             </div>
-            <div class="chat-meta">
-              <span class="chat-time">{{ getLastTime(companion.id) }}</span>
+            <div class="friends-toolbar"><strong>我的 AI 好友</strong><span>{{ companions.length }} 位</span></div>
+            <div class="friend-grid">
+              <article v-for="companion in companions" :key="companion.id" class="friend-card card-surface" @click="openChat(companion)">
+                <div class="friend-card-top"><div class="avatar large" :style="avatarStyle(companion)">{{ companion.initial || companion.name.slice(0, 1) }}</div><span class="status-pill" :class="{ quiet: !companion.canAutoMessage }"><span class="status-dot"></span>{{ companion.canAutoMessage ? '会主动找你' : '安静陪伴中' }}</span></div>
+                <h3>{{ companion.name }}</h3><p>{{ companion.tagline }}</p>
+                <div class="friend-card-footer"><span>{{ companion.memories.length }} 条记忆</span><button class="ghost-action" @click.stop="openCompanionEditor(companion)"><span v-html="icon('edit')"></span> 编辑</button></div>
+              </article>
+              <button class="friend-card add-friend-card" @click="openNewCompanion"><span class="add-circle"><span v-html="icon('plus')"></span></span><strong>创建 AI 好友</strong><p>自定义一个只属于你的角色</p></button>
             </div>
           </div>
-          <div class="empty-state" v-if="companions.length === 0">
-            <div class="empty-icon">💚</div>
-            <p>还没有AI伴侣</p>
-            <button class="primary-btn" @click="goAddCompanion">添加第一个伴侣</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="currentPage === 'chat'" class="page chat-page">
-        <div class="message-list" ref="messageList">
-          <div class="message-item" :class="{ mine: msg.role === 'user' }" v-for="msg in currentMessages" :key="msg.id">
-            <div class="msg-avatar" :style="{ background: msg.role === 'user' ? '#57C47A' : (currentCompanion ? currentCompanion.avatarColor : '#999') }">{{ msg.role === 'user' ? '我' : (currentCompanion ? currentCompanion.name.charAt(0) : '?') }}</div>
-            <div class="msg-bubble">
-              <div class="msg-text">{{ msg.content }}</div>
-              <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
+
+          <!-- AI 好友管理 -->
+          <div v-if="activeView === 'companions'" class="companions-page page-enter">
+            <div class="management-header card-surface">
+              <div><span class="soft-label">角色工作室</span><h2>把你想要的陪伴，写成一个人。</h2><p>名字、语气、边界与记忆都可以随时调整。这里是前端演示，暂不接入真实模型。</p></div>
+              <div class="management-stats"><div><strong>{{ companions.length }}</strong><span>AI 好友</span></div><div><strong>{{ memoryCount }}</strong><span>长期记忆</span></div><div><strong>{{ proactiveCount }}</strong><span>主动陪伴</span></div></div>
+            </div>
+            <div class="companion-list">
+              <article v-for="companion in companions" :key="companion.id" class="companion-row card-surface">
+                <div class="avatar xl" :style="avatarStyle(companion)">{{ companion.initial || companion.name.slice(0, 1) }}</div>
+                <div class="companion-row-main"><div class="companion-name-line"><h3>{{ companion.name }}</h3><span class="tag">{{ companion.category }}</span></div><p>{{ companion.tagline }}</p><div class="companion-meta"><span><span v-html="icon('brain')"></span>{{ companion.memories.length }} 条记忆</span><span><span v-html="icon('clock')"></span>{{ companion.frequency }}</span></div></div>
+                <div class="companion-row-actions"><button class="ghost-action" @click="openChat(companion)"><span v-html="icon('message')"></span> 聊一聊</button><button class="ghost-action" @click="openCompanionEditor(companion)"><span v-html="icon('edit')"></span> 编辑</button><button class="danger-icon" @click="removeCompanion(companion)" aria-label="删除 AI 好友"><span v-html="icon('trash')"></span></button></div>
+              </article>
             </div>
           </div>
-        </div>
-        <div class="chat-input-bar">
-          <input type="text" class="chat-input" v-model="inputMessage" placeholder="说点什么..." @keyup.enter="sendMessage" />
-          <button class="send-btn" @click="sendMessage" :disabled="!inputMessage.trim()">发送</button>
-        </div>
-      </div>
-      <div v-if="currentPage === 'companions'" class="page companions-page">
-        <div class="companion-grid">
-          <div class="companion-card" v-for="companion in companions" :key="companion.id" @click="editCompanion(companion)">
-            <div class="companion-avatar" :style="{ background: companion.avatarColor }">{{ companion.name.charAt(0) }}</div>
-            <div class="companion-name">{{ companion.name }}</div>
-            <div class="companion-desc">{{ companion.personality || '暂无描述' }}</div>
-            <div class="companion-actions">
-              <button class="small-btn" @click.stop="openChat(companion)">聊天</button>
-              <button class="small-btn danger" @click.stop="deleteCompanion(companion.id)">删除</button>
+
+          <!-- 记忆库 -->
+          <div v-if="activeView === 'memories'" class="memories-page page-enter">
+            <div class="memory-hero card-surface">
+              <div class="memory-hero-icon"><span v-html="icon('brain')"></span></div><div><span class="soft-label">属于你们的时间线</span><h2>记住，不是为了替你定义。</h2><p>你可以查看、修改或删除任何记忆。对话时，青伴只会参考你允许留下的内容。</p></div><div class="memory-total"><strong>{{ memoryCount }}</strong><span>条记忆</span></div>
+            </div>
+            <div class="memory-controls"><div class="filter-pills"><button v-for="filter in memoryFilters" :key="filter.id" :class="{ active: memoryFilter === filter.id }" @click="memoryFilter = filter.id">{{ filter.label }}</button></div><div class="memory-search"><span v-html="icon('search')"></span><input v-model="memoryQuery" placeholder="搜索记忆" /></div></div>
+            <div class="memory-timeline">
+              <article v-for="memory in filteredMemories" :key="memory.id" class="memory-card card-surface">
+                <div class="memory-card-head"><div class="memory-type" :class="memory.type"><span v-html="icon(memoryIcon(memory.type))"></span>{{ memoryTypeLabel(memory.type) }}</div><time>{{ memory.date }}</time></div>
+                <h3>{{ memory.title }}</h3><p>{{ memory.content }}</p><div class="memory-card-foot"><span class="memory-source"><span class="avatar tiny" :style="avatarStyle(memory.companion)">{{ memory.companion.initial }}</span> {{ memory.companion.name }} · {{ memory.source }}</span><div><button class="ghost-action tiny-action" @click="openMemoryEditor(memory)">编辑</button><button class="danger-text" @click="removeMemory(memory)">删除</button></div></div>
+              </article>
+              <div v-if="filteredMemories.length === 0" class="empty-state card-surface"><div class="empty-icon"><span v-html="icon('brain')"></span></div><h3>还没有匹配的记忆</h3><p>添加一条重要的小事，让陪伴从这里开始。</p><button class="primary-action compact" @click="openNewMemory"><span v-html="icon('plus')"></span> 添加记忆</button></div>
             </div>
           </div>
-          <div class="companion-card add-card" @click="goAddCompanion">
-            <div class="add-icon">+</div>
-            <div class="companion-name">添加新伴侣</div>
-          </div>
-        </div>
-      </div>
-      <div v-if="currentPage === 'addCompanion'" class="page add-companion-page">
-        <div class="form-section">
-          <h3>{{ editingCompanion ? '编辑伴侣' : '创建AI伴侣' }}</h3>
-          <div class="form-group"><label>名字</label><input type="text" v-model="companionForm.name" placeholder="给你的伴侣起个名字" /></div>
-          <div class="form-group">
-            <label>头像颜色</label>
-            <div class="color-picker">
-              <div class="color-option" :class="{ active: companionForm.avatarColor === color }" v-for="color in avatarColors" :key="color" :style="{ background: color }" @click="companionForm.avatarColor = color"></div>
+
+          <!-- 设置 -->
+          <div v-if="activeView === 'settings'" class="settings-page page-enter">
+            <section class="profile-card card-surface"><div class="profile-avatar">{{ userInitial }}</div><div><span class="soft-label">你的青伴空间</span><h2>{{ settings.nickname || '给自己一个名字' }}</h2><p>{{ settings.signature || '写下一句今天想对自己说的话。' }}</p></div><button class="ghost-action" @click="editProfile"><span v-html="icon('edit')"></span> 编辑资料</button></section>
+            <div class="settings-columns">
+              <section class="settings-section card-surface"><div class="settings-section-title"><div class="settings-icon purple"><span v-html="icon('bell')"></span></div><div><h3>陪伴提醒</h3><p>让消息以舒服的方式来到你身边</p></div></div><div class="setting-line"><div><strong>允许 AI 主动发消息</strong><span>开启后，AI 好友会偶尔想起你</span></div><button class="switch" :class="{ on: settings.autoMessages }" @click="toggleSetting('autoMessages')"><i></i></button></div><div class="setting-line"><div><strong>消息通知</strong><span>仅影响本机演示提醒</span></div><button class="switch" :class="{ on: settings.notifications }" @click="toggleSetting('notifications')"><i></i></button></div><div class="setting-line"><div><strong>夜间安静时段</strong><span>23:00 - 08:00 不触发主动消息</span></div><button class="switch" :class="{ on: settings.quietHours }" @click="toggleSetting('quietHours')"><i></i></button></div></section>
+              <section class="settings-section card-surface"><div class="settings-section-title"><div class="settings-icon coral"><span v-html="icon('palette')"></span></div><div><h3>界面偏好</h3><p>把青伴调成你喜欢的样子</p></div></div><div class="setting-line clickable" @click="toggleSetting('dimMode')"><div><strong>低亮夜读模式</strong><span>降低对比度，适合晚间浏览</span></div><button class="switch" :class="{ on: settings.dimMode }" @click.stop="toggleSetting('dimMode')"><i></i></button></div><div class="setting-line"><div><strong>当前版本</strong><span>前端原型 · 2026.09</span></div><span class="setting-value">本地演示</span></div><div class="setting-line clickable" @click="showAbout = true"><div><strong>产品说明</strong><span>了解青伴的定位与下一步</span></div><span class="chevron">›</span></div></section>
             </div>
+            <section class="settings-section card-surface data-section"><div class="settings-section-title"><div class="settings-icon mint"><span v-html="icon('database')"></span></div><div><h3>数据管理</h3><p>数据默认只保存在当前浏览器</p></div></div><div class="data-actions"><button class="data-action" @click="exportData"><span v-html="icon('download')"></span><div><strong>导出本地数据</strong><small>备份角色、聊天与记忆</small></div></button><button class="data-action" @click="resetDemo"><span v-html="icon('refresh')"></span><div><strong>恢复演示数据</strong><small>重新载入示例对话与记忆</small></div></button><button class="data-action danger" @click="clearAllData"><span v-html="icon('trash')"></span><div><strong>清空本机数据</strong><small>删除当前浏览器中的所有内容</small></div></button></div></section>
+            <div class="api-notice"><span v-html="icon('shield')"></span><div><strong>前端初版说明</strong><p>当前版本使用本地模拟回复，未接入任何真实 AI 服务。后续接入后端时，API 密钥应只放在服务端。</p></div></div>
           </div>
-          <div class="form-group"><label>性格设定</label><textarea v-model="companionForm.personality" placeholder="描述TA的性格" rows="3"></textarea></div>
-          <div class="form-group"><label>角色设定</label><textarea v-model="companionForm.roleSetting" placeholder="TA是谁？" rows="3"></textarea></div>
-          <div class="form-group"><label>开场白</label><textarea v-model="companionForm.greeting" placeholder="TA见到你时会说的话" rows="2"></textarea></div>
-          <div class="form-group toggle-group">
-            <label>允许主动发消息</label>
-            <div class="toggle" :class="{ active: companionForm.canAutoMessage }" @click="companionForm.canAutoMessage = !companionForm.canAutoMessage"><div class="toggle-knob"></div></div>
-          </div>
-          <div class="form-actions">
-            <button class="primary-btn" @click="saveCompanion">保存</button>
-            <button class="secondary-btn" @click="goBack">取消</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="currentPage === 'settings'" class="page settings-page">
-        <div class="settings-section"><h3>个人设置</h3>
-          <div class="setting-item"><span>我的昵称</span><input type="text" v-model="userSettings.nickname" placeholder="输入昵称" /></div>
-          <div class="setting-item"><span>我的签名</span><input type="text" v-model="userSettings.signature" placeholder="一句话介绍自己" /></div>
-        </div>
-        <div class="settings-section"><h3>AI设置</h3>
-          <div class="setting-item toggle-item"><span>AI主动消息通知</span><div class="toggle" :class="{ active: userSettings.autoMsgNotify }" @click="userSettings.autoMsgNotify = !userSettings.autoMsgNotify"><div class="toggle-knob"></div></div></div>
-          <div class="setting-item"><span>记忆库管理</span><button class="small-btn" @click="exportMemory">导出记忆</button></div>
-          <div class="setting-item"><span>清除所有数据</span><button class="small-btn danger" @click="clearAllData">清除</button></div>
-        </div>
-        <div class="settings-section about-section">
-          <div class="about-info"><div class="app-logo">💚</div><div class="app-name">青伴</div><div class="app-version">v0.1.0</div><div class="app-desc">情感陪伴，温暖每一刻</div></div>
-        </div>
-      </div>
-    </main>
-    <nav class="bottom-nav" v-if="currentPage !== 'chat' && currentPage !== 'addCompanion'">
-      <div class="nav-item" :class="{ active: currentPage === 'chatlist' }" @click="currentPage = 'chatlist'"><div class="nav-icon">💬</div><div class="nav-label">消息</div></div>
-      <div class="nav-item" :class="{ active: currentPage === 'companions' }" @click="currentPage = 'companions'"><div class="nav-icon">👥</div><div class="nav-label">伴侣</div></div>
-      <div class="nav-item" :class="{ active: currentPage === 'settings' }" @click="currentPage = 'settings'"><div class="nav-icon">⚙️</div><div class="nav-label">设置</div></div>
+        </section>
+      </main>
+    </div>
+
+    <nav class="mobile-nav" aria-label="移动端导航">
+      <button v-for="item in mobileNavItems" :key="item.id" :class="{ active: activeView === item.id || (item.id === 'inbox' && activeView === 'chat') }" @click="navigate(item.id)"><span v-html="icon(item.icon)"></span><small>{{ item.label }}</small><em v-if="item.id === 'inbox' && unreadTotal">{{ unreadTotal }}</em></button>
     </nav>
+
+    <!-- 创建 / 编辑 AI 好友 -->
+    <div v-if="showCompanionDialog" class="modal-backdrop" @click.self="closeModal">
+      <section class="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-dialog-title">
+        <div class="modal-head"><div><span class="soft-label">角色工作室</span><h2 id="companion-dialog-title">{{ editingCompanion ? '编辑 AI 好友' : '创建 AI 好友' }}</h2></div><button class="round-action" @click="closeModal" aria-label="关闭"><span v-html="icon('close')"></span></button></div>
+        <div class="modal-scroll"><div class="avatar-preview-row"><div class="avatar xl" :style="avatarStyle(companionForm)">{{ companionForm.initial || companionForm.name.slice(0, 1) || '伴' }}</div><div><strong>先从一个名字开始</strong><p>你可以在这里定义 TA 的气质与边界。</p></div><div class="color-swatches"><button v-for="color in avatarColors" :key="color" :style="{ background: color }" :class="{ active: companionForm.color === color }" @click="companionForm.color = color"></button></div></div>
+          <div class="form-grid"><label class="form-field"><span>名字</span><input v-model="companionForm.name" maxlength="12" placeholder="例如：沐沐" /></label><label class="form-field"><span>关系类型</span><select v-model="companionForm.category"><option>温柔陪伴</option><option>知心朋友</option><option>元气搭子</option><option>安静倾听</option><option>灵感导师</option></select></label></div>
+          <label class="form-field"><span>一句话介绍</span><input v-model="companionForm.tagline" maxlength="40" placeholder="例如：会记得你小习惯的温柔朋友" /></label>
+          <label class="form-field"><span>性格与说话方式</span><textarea v-model="companionForm.personality" rows="4" placeholder="例如：温柔、少说教，先听我把话说完，偶尔用轻松的方式逗我开心。"></textarea></label>
+          <label class="form-field"><span>初次见面想说的话</span><textarea v-model="companionForm.greeting" rows="2" placeholder="例如：嗨，我已经准备好听你说今天的事了。"></textarea></label>
+          <div class="form-card"><div class="form-card-copy"><strong>允许主动发消息</strong><span>让 TA 偶尔先来找你，不错过想念</span></div><button class="switch" :class="{ on: companionForm.canAutoMessage }" @click="companionForm.canAutoMessage = !companionForm.canAutoMessage"><i></i></button></div>
+          <div class="form-card"><div class="form-card-copy"><strong>记忆偏好</strong><span>对话中出现的重要内容会进入待确认记忆</span></div><span class="setting-value">{{ companionForm.memoryMode === 'curated' ? '精选记忆' : '自动记录' }}</span></div>
+        </div>
+        <div class="modal-foot"><button class="secondary-action" @click="closeModal">取消</button><button class="primary-action" @click="saveCompanion"><span v-html="icon('check')"></span> {{ editingCompanion ? '保存修改' : '创建并开始聊天' }}</button></div>
+      </section>
+    </div>
+
+    <!-- 记忆编辑 -->
+    <div v-if="showMemoryDialog" class="modal-backdrop" @click.self="closeModal">
+      <section class="modal-card memory-modal" role="dialog" aria-modal="true" aria-labelledby="memory-dialog-title">
+        <div class="modal-head"><div><span class="soft-label">长期记忆库</span><h2 id="memory-dialog-title">{{ editingMemory ? '编辑记忆' : '添加一条记忆' }}</h2></div><button class="round-action" @click="closeModal" aria-label="关闭"><span v-html="icon('close')"></span></button></div>
+        <div class="modal-scroll"><label class="form-field"><span>归属于谁</span><select v-model="memoryForm.companionId"><option v-for="companion in companions" :key="companion.id" :value="companion.id">{{ companion.name }}</option></select></label><label class="form-field"><span>记忆标题</span><input v-model="memoryForm.title" maxlength="28" placeholder="例如：喜欢雨天听歌" /></label><label class="form-field"><span>记忆内容</span><textarea v-model="memoryForm.content" rows="5" placeholder="写下希望被记住的细节、偏好或重要事件"></textarea></label><div class="memory-type-select"><span>记忆类型</span><div class="filter-pills"><button v-for="filter in memoryFilters.slice(1)" :key="filter.id" :class="{ active: memoryForm.type === filter.id }" @click="memoryForm.type = filter.id">{{ filter.label }}</button></div></div></div>
+        <div class="modal-foot"><button class="secondary-action" @click="closeModal">取消</button><button class="primary-action" @click="saveMemory"><span v-html="icon('check')"></span> {{ editingMemory ? '保存记忆' : '加入记忆库' }}</button></div>
+      </section>
+    </div>
+
+    <!-- 个人资料 -->
+    <div v-if="showProfileDialog" class="modal-backdrop" @click.self="closeModal"><section class="modal-card profile-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="soft-label">个人资料</span><h2>让青伴更懂你</h2></div><button class="round-action" @click="closeModal" aria-label="关闭"><span v-html="icon('close')"></span></button></div><div class="modal-scroll"><label class="form-field"><span>昵称</span><input v-model="profileForm.nickname" maxlength="16" placeholder="你希望被怎么称呼？" /></label><label class="form-field"><span>一句话签名</span><textarea v-model="profileForm.signature" rows="3" maxlength="50" placeholder="写下一句现在的心情"></textarea></label></div><div class="modal-foot"><button class="secondary-action" @click="closeModal">取消</button><button class="primary-action" @click="saveProfile"><span v-html="icon('check')"></span> 保存资料</button></div></section></div>
+
+    <div v-if="showAbout" class="modal-backdrop" @click.self="showAbout = false"><section class="modal-card about-modal" role="dialog" aria-modal="true"><div class="about-mark"><div class="brand-mark"><span></span><i></i></div></div><span class="soft-label">青伴 · 前端初版</span><h2>让重要的陪伴，<br /><em>一直都在。</em></h2><p>青伴是一间轻盈的私人数字客厅：你可以创建 AI 好友，保存重要记忆，也可以只在想说话的时候回来。</p><div class="about-points"><div><span v-html="icon('shield')"></span><strong>隐私优先</strong><small>演示数据只留在本机</small></div><div><span v-html="icon('heart')"></span><strong>关系可编辑</strong><small>记忆随时查看与删除</small></div><div><span v-html="icon('sparkle')"></span><strong>先做稳定</strong><small>少而重要的核心体验</small></div></div><button class="primary-action full" @click="showAbout = false">知道了</button></section></div>
+
+    <transition name="toast"><div v-if="toastMessage" class="toast-message"><span v-html="icon('check')"></span>{{ toastMessage }}</div></transition>
   </div>
+
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="js/store.js"></script>
   <script src="js/app.js"></script>
