@@ -1,0 +1,16 @@
+info:
+  name: homePage
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: 127.0.0.1:8080/
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
