@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang=\"zh-CN\">
+<head>
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\" />
+  <title>青伴 - 情感陪伴</title>
+  <link rel=\"stylesheet\" href=\"css/style.css\" />
+  <link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💚</text></svg>\" />
+</head>
+<body>
+  <div id=\"app\">
+    <!-- 顶部导航栏 -->
+    <header class=\"top-bar\" v-if=\"currentPage !== 'chat'\">
+      <div class=\"top-bar-title\">{{ pageTitle }}</div>
+      <div class=\"top-bar-actions\">
+        <button class=\"icon-btn\" v-if=\"currentPage === 'chatlist'\" @click=\"goAddCompanion\">+</button>
+      </div>
+    </header>
+
+    <!-- 聊天室顶部栏 -->
+    <header class=\"top-bar chat-top-bar\" v-if=\"currentPage === 'chat'\">
+      <button class=\"icon-btn back-btn\" @click=\"goBack\">&#8249;</button>
+      <div class=\"top-bar-title\">{{ currentChatName }}</div>
+      <button class=\"icon-btn\" @click=\"showChatMenu = !showChatMenu\">&#8942;</button>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class=\"main-content\" :class=\"{ 'with-chat-header': currentPage === 'chat' }\">
+      <!-- 好友列表页 -->
+      <div v-if=\"currentPage === 'chatlist'\" class=\"page chatlist-page\">
+        <div class=\"search-bar\">
+          <input type=\"text\" placeholder=\"搜索\" v-model=\"searchQuery\" />
+        </div>
+        <div class=\"chat-list\">
+          <div
+            class=\"chat-item\"
+            v-for=\"companion in filteredCompanions\"
+            :key=\"companion.id\"
+            @click=\"openChat(companion)\"
+          >
+            <div class=\"avatar\" :style=\"{ background: companion.avatarColor }\">
+              {{ companion.name.charAt(0) }}
+            </div>
+            <div class=\"chat-info\">
+              <div class=\"chat-name\">{{ companion.name }}</div>
+              <div class=\"chat-last-msg\">{{ getLastMessage(companion.id) }}</div>
+            </div>
+            <div class=\"chat-meta\">
+              <span class=\"chat-time\">{{ getLastTime(companion.id) }}</span>
+              <span class=\"unread-badge\" v-if=\"getUnreadCount(companion.id) > 0\">{{ getUnreadCount(companion.id) }}</span>
+            </div>
+          </div>
+          <div class=\"empty-state\" v-if=\"companions.length === 0\">
+            <div class=\"empty-icon\">💚</div>
+            <p>还没有AI伴侣</p>
+            <button class=\"primary-btn\" @click=\"goAddCompanion\">添加第一个伴侣</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 聊天页面 -->
+      <div v-if=\"currentPage === 'chat'\" class=\"page chat-page\">
+        <div class=\"message-list\" ref=\"messageList\">
+          <div
+            class=\"message-item\"
+            :class=\"{ 'mine': msg.role === 'user' }\"
+            v-for=\"msg in currentMessages\"
+            :key=\"msg.id\"
+          >
+            <div class=\"msg-avatar\" :style=\"{ background: msg.role === 'user' ? '#57C47A' : currentCompanion?.avatarColor }\">
+              {{ msg.role === 'user' ? '我' : currentCompanion?.name?.charAt(0) }}
+            </div>
+            <div class=\"msg-bubble\">
+              <div class=\"msg-text\">{{ msg.content }}</div>
+              <div class=\"msg-time\">{{ formatTime(msg.timestamp) }}</div>
+            </div>
+          </div>
+        </div>
+        <div class=\"chat-input-bar\">
+          <input
+            type=\"text\"
+            class=\"chat-input\"
+            v-model=\"inputMessage\"
+            placeholder=\"说点什么...\"
+            @keyup.enter=\"sendMessage\"
+          />
+          <button class=\"send-btn\" @click=\"sendMessage\" :disabled=\"!inputMessage.trim()\">发送</button>
+        </div>
+      </div>
+
+      <!-- AI伴侣管理页 -->
+      <div v-if=\"currentPage === 'companions'\" class=\"page companions-page\">
+        <div class=\"companion-grid\">
+          <div
+            class=\"companion-card\"
+            v-for=\"companion in companions\"
+            :key=\"companion.id\"
+            @click=\"editCompanion(companion)\"
+          >
+            <div class=\"companion-avatar\" :style=\"{ background: companion.avatarColor }\">
+              {{ companion.name.charAt(0) }}
+            </div>
+            <div class=\"companion-name\">{{ companion.name }}</div>
+            <div class=\"companion-desc\">{{ companion.personality || '暂无描述' }}</div>
+            <div class=\"companion-actions\">
+              <button class=\"small-btn\" @click.stop=\"openChat(companion)\">聊天</button>
+              <button class=\"small-btn danger\" @click.stop=\"deleteCompanion(companion.id)\">删除</button>
+            </div>
+          </div>
+          <div class=\"companion-card add-card\" @click=\"goAddCompanion\">
+            <div class=\"add-icon\">+</div>
+            <div class=\"companion-name\">添加新伴侣</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 添加/编辑伴侣页 -->
+      <div v-if=\"currentPage === 'addCompanion'\" class=\"page add-companion-page\">
+        <div class=\"form-section\">
+          <h3>{{ editingCompanion ? '编辑伴侣' : '创建AI伴侣' }}</h3>
+          <div class=\"form-group\">
+            <label>名字</label>
+            <input type=\"text\" v-model=\"companionForm.name\" placeholder=\"给你的伴侣起个名字\" />
+          </div>
+          <div class=\"form-group\">
+            <label>头像颜色</label>
+            <div class=\"color-picker\">
+              <div
+                class=\"color-option\"
+                :class=\"{ active: companionForm.avatarColor === color }\"
+                v-for=\"color in avatarColors\"
+                :key=\"color\"
+                :style=\"{ background: color }\"
+                @click=\"companionForm.avatarColor = color\"
+              ></div>
+            </div>
+          </div>
+          <div class=\"form-group\">
+            <label>性格设定</label>
+            <textarea v-model=\"companionForm.personality\" placeholder=\"描述TA的性格，例如：温柔体贴、幽默风趣、理性冷静...\" rows=\"3\"></textarea>
+          </div>
+          <div class=\"form-group\">
+            <label>角色设定</label>
+            <textarea v-model=\"companionForm.roleSetting\" placeholder=\"TA是谁？例如：你的青梅竹马、一位知心姐姐、一个AI朋友...\" rows=\"3\"></textarea>
+          </div>
+          <div class=\"form-group\">
+            <label>开场白</label>
+            <textarea v-model=\"companionForm.greeting\" placeholder=\"TA见到你时会说的话...\" rows=\"2\"></textarea>
+          </div>
+          <div class=\"form-group toggle-group\">
+            <label>允许主动发消息</label>
+            <div class=\"toggle\" :class=\"{ active: companionForm.canAutoMessage }\" @click=\"companionForm.canAutoMessage = !companionForm.canAutoMessage\">
+              <div class=\"toggle-knob\"></div>
+            </div>
+          </div>
+          <div class=\"form-actions\">
+            <button class=\"primary-btn\" @click=\"saveCompanion\">保存</button>
+            <button class=\"secondary-btn\" @click=\"goBack\">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设置页面 -->
+      <div v-if=\"currentPage === 'settings'\" class=\"page settings-page\">
+        <div class=\"settings-section\">
+          <h3>个人设置</h3>
+          <div class=\"setting-item\">
+            <span>我的昵称</span>
+            <input type=\"text\" v-model=\"userSettings.nickname\" placeholder=\"输入昵称\" />
+          </div>
+          <div class=\"setting-item\">
+            <span>我的签名</span>
+            <input type=\"text\" v-model=\"userSettings.signature\" placeholder=\"一句话介绍自己\" />
+          </div>
+        </div>
+        <div class=\"settings-section\">
+          <h3>AI设置</h3>
+          <div class=\"setting-item toggle-item\">
+            <span>AI主动消息通知</span>
+            <div class=\"toggle\" :class=\"{ active: userSettings.autoMsgNotify }\" @click=\"userSettings.autoMsgNotify = !userSettings.autoMsgNotify\">
+              <div class=\"toggle-knob\"></div>
+            </div>
+          </div>
+          <div class=\"setting-item\">
+            <span>记忆库管理</span>
+            <button class=\"small-btn\" @click=\"exportMemory\">导出记忆</button>
+          </div>
+          <div class=\"setting-item\">
+            <span>清除所有数据</span>
+            <button class=\"small-btn danger\" @click=\"clearAllData\">清除</button>
+          </div>
+        </div>
+        <div class=\"settings-section about-section\">
+          <div class=\"about-info\">
+            <div class=\"app-logo\">💚</div>
+            <div class=\"app-name\">青伴</div>
+            <div class=\"app-version\">v0.1.0</div>
+            <div class=\"app-desc\">情感陪伴，温暖每一刻</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部导航栏 -->
+    <nav class=\"bottom-nav\" v-if=\"currentPage !== 'chat' && currentPage !== 'addCompanion'\">
+      <div class=\"nav-item\" :class=\"{ active: currentPage === 'chatlist' }\" @click=\"currentPage = 'chatlist'\">
+        <div class=\"nav-icon\">💬</div>
+        <div class=\"nav-label\">消息</div>
+      </div>
+      <div class=\"nav-item\" :class=\"{ active: currentPage === 'companions' }\" @click=\"currentPage = 'companions'\">
+        <div class=\"nav-icon\">👥</div>
+        <div class=\"nav-label\">伴侣</div>
+      </div>
+      <div class=\"nav-item\" :class=\"{ active: currentPage === 'settings' }\" @click=\"currentPage = 'settings'\">
+        <div class=\"nav-icon\">⚙️</div>
+        <div class=\"nav-label\">设置</div>
+      </div>
+    </nav>
+  </div>
+
+  <script src=\"https://unpkg.com/vue@3/dist/vue.global.prod.js\"></script>
+  <script src=\"js/store.js\"></script>
+  <script src=\"js/app.js\"></script>
+</body>
+</html>

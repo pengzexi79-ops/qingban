@@ -1,0 +1,712 @@
+/* === 全局样式 === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --primary: #57C47A;
+  --primary-dark: #4AAF6C;
+  --bg: #F5F5F5;
+  --card-bg: #FFFFFF;
+  --text: #1A1A1A;
+  --text-secondary: #999999;
+  --border: #E5E5E5;
+  --danger: #E74C3C;
+  --bubble-mine: #95EC69;
+  --bubble-other: #FFFFFF;
+  --nav-bg: #FAFAFA;
+  --top-bar-bg: #EDEDED;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg);
+}
+
+/* === 顶部栏 === */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--top-bar-bg);
+  border-bottom: 0.5px solid var(--border);
+  min-height: 50px;
+  z-index: 10;
+}
+
+.top-bar-title {
+  font-size: 17px;
+  font-weight: 600;
+  flex: 1;
+  text-align: center;
+}
+
+.top-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.icon-btn:active {
+  background: rgba(0,0,0,0.05);
+}
+
+.back-btn {
+  font-size: 32px;
+  padding: 0 8px;
+  margin-right: 4px;
+  line-height: 1;
+}
+
+.chat-top-bar {
+  background: var(--top-bar-bg);
+}
+
+/* === 主内容区 === */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.main-content.with-chat-header {
+  /* chat header takes space */
+}
+
+/* === 搜索栏 === */
+.search-bar {
+  padding: 8px 12px;
+  background: var(--bg);
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 20px;
+  background: #E8E8E8;
+  font-size: 14px;
+  outline: none;
+}
+
+.search-bar input:focus {
+  background: #E0E0E0;
+}
+
+/* === 聊天列表 === */
+.chat-list {
+  background: var(--card-bg);
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chat-item:active {
+  background: #F0F0F0;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 20px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.chat-info {
+  flex: 1;
+  margin: 0 12px;
+  overflow: hidden;
+}
+
+.chat-name {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-last-msg {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.chat-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.unread-badge {
+  background: var(--danger);
+  color: white;
+  font-size: 11px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 20px;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  font-size: 60px;
+  margin-bottom: 16px;
+}
+
+.empty-state p {
+  margin-bottom: 20px;
+  font-size: 15px;
+}
+
+/* === 聊天页面 === */
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #F0EDE8;
+}
+
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 85%;
+}
+
+.message-item.mine {
+  flex-direction: row-reverse;
+  align-self: flex-end;
+}
+
+.msg-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.msg-bubble {
+  background: var(--bubble-other);
+  padding: 10px 14px;
+  border-radius: 8px;
+  position: relative;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+
+.message-item.mine .msg-bubble {
+  background: var(--bubble-mine);
+}
+
+.msg-text {
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.msg-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  text-align: right;
+}
+
+.message-item.mine .msg-time {
+  text-align: left;
+}
+
+/* === 聊天输入栏 === */
+.chat-input-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--top-bar-bg);
+  border-top: 0.5px solid var(--border);
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 20px;
+  background: white;
+  font-size: 15px;
+  outline: none;
+}
+
+.send-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 20px;
+  background: var(--primary);
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.send-btn:not(:disabled):active {
+  opacity: 0.8;
+}
+
+/* === 伴侣管理页 === */
+.companion-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+}
+
+.companion-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.companion-card:active {
+  transform: scale(0.97);
+}
+
+.companion-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.companion-name {
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.companion-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.companion-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.add-card {
+  border: 2px dashed var(--border);
+  background: transparent;
+  box-shadow: none;
+}
+
+.add-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--text-secondary);
+}
+
+/* === 添加伴侣页 === */
+.add-companion-page {
+  padding: 20px 16px;
+  background: var(--bg);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.form-section {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.form-section h3 {
+  font-size: 18px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--primary);
+}
+
+.form-group textarea {
+  resize: none;
+}
+
+.color-picker {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.color-option {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.color-option.active {
+  border-color: var(--text);
+  transform: scale(1.1);
+}
+
+.toggle-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toggle-group label {
+  margin-bottom: 0;
+}
+
+.toggle {
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  background: #DDD;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.3s;
+}
+
+.toggle.active {
+  background: var(--primary);
+}
+
+.toggle-knob {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.3s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.toggle.active .toggle-knob {
+  transform: translateX(20px);
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.primary-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.primary-btn:active {
+  opacity: 0.8;
+}
+
+.secondary-btn {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.secondary-btn:active {
+  background: #F0F0F0;
+}
+
+/* === 设置页 === */
+.settings-page {
+  background: var(--bg);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.settings-section {
+  background: var(--card-bg);
+  margin: 12px;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.settings-section h3 {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.setting-item:last-child {
+  border-bottom: none;
+}
+
+.setting-item span {
+  font-size: 15px;
+}
+
+.setting-item input {
+  border: none;
+  text-align: right;
+  font-size: 15px;
+  outline: none;
+  color: var(--text-secondary);
+  max-width: 60%;
+}
+
+.toggle-item {
+  cursor: pointer;
+}
+
+.small-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.small-btn:active {
+  background: #F0F0F0;
+}
+
+.small-btn.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.about-section {
+  text-align: center;
+  padding: 24px;
+}
+
+.about-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-logo {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+
+.app-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.app-version {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.app-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* === 底部导航 === */
+.bottom-nav {
+  display: flex;
+  background: var(--nav-bg);
+  border-top: 0.5px solid var(--border);
+  padding: 6px 0 env(safe-area-inset-bottom, 8px);
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.nav-icon {
+  font-size: 22px;
+}
+
+.nav-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.nav-item.active .nav-label {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* === 滚动条美化 === */
+::-webkit-scrollbar {
+  width: 0;
+  display: none;
+}
+
+/* === 动画 === */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page {
+  animation: fadeIn 0.2s ease-out;
+}
