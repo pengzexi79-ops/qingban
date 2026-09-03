@@ -1,0 +1,1164 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "青伴 API",
+    "version": "0.1.0",
+    "description": "青伴前端 MVP 的后端接入契约。当前仓库仅包含 Vue 前端演示，现有版本通过\nlocalStorage 保存数据并不会实际调用这些 HTTP 接口。本文件根据现有页面、表单\n和本地数据模型定义服务端 API，供后续 FastAPI/NestJS 等后端实现使用。\n",
+    "contact": {
+      "name": "青伴项目"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/license/mit"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "当前站点 API"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Profile",
+      "description": "用户资料与设置"
+    },
+    {
+      "name": "Companions",
+      "description": "AI 好友管理"
+    },
+    {
+      "name": "Conversations",
+      "description": "会话与聊天消息"
+    },
+    {
+      "name": "Memories",
+      "description": "长期记忆管理"
+    },
+    {
+      "name": "Data",
+      "description": "用户数据导出与清理"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "获取当前用户资料与设置",
+        "operationId": "getCurrentUser",
+        "responses": {
+          "200": {
+            "description": "当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "更新当前用户资料或设置",
+        "operationId": "updateCurrentUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/companions": {
+      "get": {
+        "tags": [
+          "Companions"
+        ],
+        "summary": "获取 AI 好友列表",
+        "operationId": "listCompanions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Query"
+          },
+          {
+            "in": "query",
+            "name": "unread",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "仅返回有未读消息的 AI 好友"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AI 好友列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Companion"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Companions"
+        ],
+        "summary": "创建 AI 好友",
+        "operationId": "createCompanion",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Companion"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/companions/{companionId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanionId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Companions"
+        ],
+        "summary": "获取 AI 好友详情",
+        "operationId": "getCompanion",
+        "responses": {
+          "200": {
+            "description": "AI 好友详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Companion"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Companions"
+        ],
+        "summary": "更新 AI 好友",
+        "operationId": "updateCompanion",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的 AI 好友",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Companion"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Companions"
+        ],
+        "summary": "删除 AI 好友及其消息、记忆",
+        "operationId": "deleteCompanion",
+        "responses": {
+          "204": {
+            "description": "删除成功"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/companions/{companionId}/messages": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanionId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "获取与 AI 好友的聊天记录",
+        "operationId": "listMessages",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "分页游标，返回此时间之前的消息"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "消息列表，按时间升序返回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Message"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "发送消息或请求主动消息",
+        "operationId": "sendMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建消息。普通消息可异步生成 assistant 消息；主动消息直接返回 assistant 消息。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageSendResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/companions/{companionId}/read": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanionId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "标记会话已读",
+        "operationId": "markConversationRead",
+        "responses": {
+          "204": {
+            "description": "标记成功"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/companions/{companionId}/memories": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanionId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "获取 AI 好友的长期记忆",
+        "operationId": "listMemories",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Query"
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "$ref": "#/components/schemas/MemoryType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "记忆列表，按日期倒序返回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Memory"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "添加长期记忆",
+        "operationId": "createMemory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/companions/{companionId}/memories/{memoryId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanionId"
+        },
+        {
+          "in": "path",
+          "name": "memoryId",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "更新长期记忆",
+        "operationId": "updateMemory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的记忆",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "删除长期记忆",
+        "operationId": "deleteMemory",
+        "responses": {
+          "204": {
+            "description": "删除成功，后续对话不得继续使用该记忆"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/data/export": {
+      "get": {
+        "tags": [
+          "Data"
+        ],
+        "summary": "导出当前用户的全部数据",
+        "operationId": "exportData",
+        "responses": {
+          "200": {
+            "description": "JSON 数据备份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportData"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/data": {
+      "delete": {
+        "tags": [
+          "Data"
+        ],
+        "summary": "删除当前用户全部数据",
+        "operationId": "deleteAllData",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            },
+            "description": "必须显式确认不可恢复的数据删除"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "删除成功"
+          },
+          "400": {
+            "description": "未提供 confirm=true"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "CompanionId": {
+        "in": "path",
+        "name": "companionId",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "Query": {
+        "in": "query",
+        "name": "q",
+        "schema": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "description": "搜索名称、最近消息或记忆文本"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "未登录或访问令牌无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "资源不存在或不属于当前用户",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "请求参数校验失败",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Error": {
+        "description": "请求失败",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "required": [
+          "id",
+          "nickname",
+          "signature",
+          "settings"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "user_01HXYZ"
+          },
+          "nickname": {
+            "type": "string",
+            "maxLength": 16,
+            "example": "林林"
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 50,
+            "example": "把日子过成被记住的样子"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/UserSettings"
+          }
+        }
+      },
+      "UserUpdate": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "settings": {
+            "$ref": "#/components/schemas/UserSettingsUpdate"
+          }
+        }
+      },
+      "UserSettings": {
+        "type": "object",
+        "required": [
+          "autoMessages",
+          "notifications",
+          "quietHours",
+          "dimMode"
+        ],
+        "properties": {
+          "autoMessages": {
+            "type": "boolean"
+          },
+          "notifications": {
+            "type": "boolean"
+          },
+          "quietHours": {
+            "type": "boolean"
+          },
+          "dimMode": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UserSettingsUpdate": {
+        "type": "object",
+        "properties": {
+          "autoMessages": {
+            "type": "boolean"
+          },
+          "notifications": {
+            "type": "boolean"
+          },
+          "quietHours": {
+            "type": "boolean"
+          },
+          "dimMode": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Companion": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "initial",
+          "color",
+          "category",
+          "tagline",
+          "personality",
+          "greeting",
+          "canAutoMessage",
+          "frequency",
+          "online",
+          "unread"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "mumu"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 12,
+            "example": "沐沐"
+          },
+          "initial": {
+            "type": "string",
+            "maxLength": 1,
+            "example": "沐"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "example": "#8d83ee"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "温柔陪伴",
+              "知心朋友",
+              "元气搭子",
+              "安静倾听",
+              "灵感导师"
+            ]
+          },
+          "tagline": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "personality": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "greeting": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "canAutoMessage": {
+            "type": "boolean"
+          },
+          "frequency": {
+            "type": "string",
+            "example": "偶尔想起你"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "unread": {
+            "type": "boolean"
+          },
+          "memories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Memory"
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "CompanionCreate": {
+        "type": "object",
+        "required": [
+          "name",
+          "category"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "default": "#8d83ee"
+          },
+          "category": {
+            "$ref": "#/components/schemas/Companion/properties/category"
+          },
+          "tagline": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "personality": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "greeting": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "canAutoMessage": {
+            "type": "boolean",
+            "default": true
+          },
+          "memoryMode": {
+            "type": "string",
+            "enum": [
+              "curated",
+              "automatic"
+            ],
+            "default": "curated"
+          }
+        }
+      },
+      "CompanionUpdate": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "category": {
+            "$ref": "#/components/schemas/Companion/properties/category"
+          },
+          "tagline": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "personality": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "greeting": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "canAutoMessage": {
+            "type": "boolean"
+          },
+          "memoryMode": {
+            "type": "string",
+            "enum": [
+              "curated",
+              "automatic"
+            ]
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "timestamp",
+          "proactive"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proactive": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "MessageCreate": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "content",
+              "proactive"
+            ],
+            "properties": {
+              "content": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "proactive": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ],
+                "default": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "proactive"
+            ],
+            "properties": {
+              "proactive": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "请求 AI 好友主动发送一条消息。"
+              }
+            }
+          }
+        ]
+      },
+      "MessageSendResult": {
+        "type": "object",
+        "required": [
+          "assistantMessage",
+          "memoryCandidates"
+        ],
+        "properties": {
+          "userMessage": {
+            "type": "object",
+            "nullable": true,
+            "description": "主动消息请求不创建用户消息，此字段为空。",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Message"
+              }
+            ]
+          },
+          "assistantMessage": {
+            "$ref": "#/components/schemas/Message"
+          },
+          "memoryCandidates": {
+            "type": "array",
+            "description": "从本次消息中提取、等待用户确认的记忆；当前前端会直接保存匹配到的条目。",
+            "items": {
+              "$ref": "#/components/schemas/Memory"
+            }
+          }
+        }
+      },
+      "MemoryType": {
+        "type": "string",
+        "enum": [
+          "preference",
+          "event",
+          "relationship"
+        ]
+      },
+      "Memory": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "title",
+          "content",
+          "date",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 28
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-09-02"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 50,
+            "example": "你告诉我的"
+          }
+        }
+      },
+      "MemoryCreate": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "content"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 28
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 50,
+            "default": "手动添加"
+          }
+        }
+      },
+      "MemoryUpdate": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 28
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 50
+          }
+        }
+      },
+      "ExportData": {
+        "type": "object",
+        "required": [
+          "companions",
+          "settings",
+          "exportedAt",
+          "version"
+        ],
+        "properties": {
+          "companions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Companion"
+            }
+          },
+          "settings": {
+            "$ref": "#/components/schemas/UserSettings"
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string",
+            "example": "qingban-api-v1"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string",
+            "example": "请求参数不合法"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}
