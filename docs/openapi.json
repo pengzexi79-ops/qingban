@@ -1,11 +1,11 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "青伴 API",
+    "title": "亲伴 API",
     "version": "0.1.0",
-    "description": "青伴前端 MVP 的后端接入契约。当前仓库仅包含 Vue 前端演示，现有版本通过\nlocalStorage 保存数据并不会实际调用这些 HTTP 接口。本文件根据现有页面、表单\n和本地数据模型定义服务端 API，供后续 FastAPI/NestJS 等后端实现使用。\n",
+    "description": "亲伴前端 MVP 的后端接入契约。当前仓库仅包含 Vue 前端演示，现有版本通过\nlocalStorage 保存数据并不会实际调用这些 HTTP 接口。本文件根据现有页面、表单\n和本地数据模型定义服务端 API，供后续 FastAPI/NestJS 等后端实现使用。\n",
     "contact": {
-      "name": "青伴项目"
+      "name": "亲伴项目"
     },
     "license": {
       "name": "MIT",
@@ -1134,7 +1134,7 @@
           },
           "version": {
             "type": "string",
-            "example": "qingban-api-v1"
+            "example": "qinban-api-v1"
           }
         }
       },
