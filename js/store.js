@@ -75,7 +75,12 @@
     autoMessages: true,
     notifications: true,
     quietHours: true,
-    dimMode: false
+    dimMode: false,
+    apiEnabled: false,
+    apiBaseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    apiModel: 'gpt-4o-mini',
+    apiTemperature: 0.8
   };
 
   function clone(value) {
@@ -169,6 +174,14 @@
       write(data);
       return data.settings;
     },
-    exportData() { return { ...read(), exportedAt: new Date().toISOString(), version: 'qingban-frontend-v2' }; }
+    exportData() {
+      const data = read();
+      return {
+        ...data,
+        settings: { ...data.settings, apiKey: '' },
+        exportedAt: new Date().toISOString(),
+        version: 'qingban-frontend-v3'
+      };
+    }
   };
 })();

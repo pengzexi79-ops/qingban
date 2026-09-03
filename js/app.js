@@ -40,12 +40,18 @@ const ChatView = {
     companion: { type: Object, required: true },
     messages: { type: Array, default: () => [] },
     isReplying: Boolean,
-    inputMessage: { type: String, default: '' }
+    inputMessage: { type: String, default: '' },
+    apiActive: Boolean
   },
   emits: ['update-input', 'send', 'quick', 'proactive', 'back', 'open-settings'],
   methods: {
     icon,
-    avatarStyle(item) { return { background: item && item.color ? item.color : '#8d83ee' }; },
+    avatarStyle(item) {
+      return {
+        backgroundColor: item && item.color ? item.color : '#8d83ee',
+        backgroundImage: item && item.avatarImage ? `url("${item.avatarImage}")` : 'none'
+      };
+    },
     formatMessageTime(timestamp) { return new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }); },
     quick(text) { this.$emit('quick', text); },
     send() { this.$emit('send'); },
@@ -56,7 +62,7 @@ const ChatView = {
       <div class="chat-contact-bar">
         <div class="chat-contact-info">
           <button class="chat-back-mobile" @click="$emit('back')" aria-label="返回"><span v-html="icon('arrow-left')"></span></button>
-          <div class="avatar" :style="avatarStyle(companion)">{{ companion.initial || companion.name.slice(0, 1) }}</div>
+          <div class="avatar" :style="avatarStyle(companion)"><span v-if="!companion.avatarImage">{{ companion.initial || companion.name.slice(0, 1) }}</span></div>
           <div><strong>{{ companion.name }}</strong><span><i class="status-dot"></i>{{ companion.online ? '正在青伴里' : '暂时安静' }}</span></div>
         </div>
         <div class="chat-contact-actions"><button class="ghost-action" @click="$emit('proactive')"><span v-html="icon('send')"></span><span class="desktop-only">让 TA 主动说句话</span><span class="mobile-only">主动消息</span></button><button class="round-action" @click="$emit('open-settings')" aria-label="聊天设置"><span v-html="icon('settings')"></span></button></div>
@@ -68,17 +74,17 @@ const ChatView = {
           <div v-for="(message, index) in messages" :key="message.id" class="message-block" :class="{ mine: message.role === 'user' }">
             <div v-if="index === 0 || new Date(message.timestamp).toDateString() !== new Date(messages[index - 1].timestamp).toDateString()" class="date-divider">{{ new Date(message.timestamp).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) }}</div>
             <div class="message-line">
-              <div v-if="message.role !== 'user'" class="message-avatar avatar" :style="avatarStyle(companion)">{{ companion.initial }}</div>
+              <div v-if="message.role !== 'user'" class="message-avatar avatar" :style="avatarStyle(companion)"><span v-if="!companion.avatarImage">{{ companion.initial }}</span></div>
               <div class="message-body"><div class="message-bubble">{{ message.content }}</div><time>{{ formatMessageTime(message.timestamp) }}<span v-if="message.proactive" class="proactive-tag">主动</span></time></div>
               <div v-if="message.role === 'user'" class="message-avatar user-avatar">我</div>
             </div>
           </div>
-          <div v-if="isReplying" class="message-block"><div class="message-line"><div class="message-avatar avatar" :style="avatarStyle(companion)">{{ companion.initial }}</div><div class="message-body"><div class="message-bubble typing"><i></i><i></i><i></i></div></div></div></div>
+          <div v-if="isReplying" class="message-block"><div class="message-line"><div class="message-avatar avatar" :style="avatarStyle(companion)"><span v-if="!companion.avatarImage">{{ companion.initial }}</span></div><div class="message-body"><div class="message-bubble typing"><i></i><i></i><i></i></div></div></div></div>
         </template>
       </div>
       <div class="chat-quick-replies" v-if="messages.length < 4 && !isReplying"><button class="quick-chip" @click="quick('今天有点累')">今天有点累</button><button class="quick-chip" @click="quick('我想分享一件小事')">分享一件小事</button><button class="quick-chip" @click="quick('你还记得我吗？')">你还记得我吗？</button></div>
       <div class="chat-composer"><button class="composer-icon" aria-label="添加附件"><span v-html="icon('paperclip')"></span></button><div class="composer-input"><textarea :value="inputMessage" @input="update($event.target.value)" @keydown.enter.exact.prevent="send" rows="1" placeholder="说点什么，青伴在听…"></textarea><span>{{ inputMessage.length }}/500</span></div><button class="send-button" :class="{ ready: inputMessage.trim() }" :disabled="!inputMessage.trim() || isReplying" @click="send" aria-label="发送消息"><span v-html="icon('send')"></span></button></div>
-      <p class="chat-disclaimer"><span v-html="icon('shield')"></span> 当前为前端演示，对话回复由本地模拟生成</p>
+      <p class="chat-disclaimer"><span v-html="icon('shield')"></span> {{ apiActive ? '当前对话使用你在设置中配置的 API' : '未启用 API，当前回复由本地模拟生成' }}</p>
     </div>
   `
 };
@@ -92,6 +98,7 @@ const app = createApp({
       companions: state.companions, settings: state.settings, inputMessage: '', isReplying: false,
       showCompanionDialog: false, showMemoryDialog: false, showProfileDialog: false, showAbout: false,
       editingCompanion: null, editingMemory: null, toastMessage: '', toastTimer: null, autoMessageTimer: null,
+      showApiKey: false, apiTesting: false,
       companionForm: thisBlankCompanion(), memoryForm: thisBlankMemory(state.companions),
       profileForm: { nickname: state.settings.nickname, signature: state.settings.signature },
       avatarColors: ['#8d83ee', '#ef9d98', '#66b7ae', '#e4ae6b', '#7296d9', '#ad87bd'],
@@ -109,6 +116,12 @@ const app = createApp({
     unreadTotal() { return this.companions.reduce((sum, item) => sum + (item.unread ? 1 : 0), 0); },
     memoryCount() { return this.companions.reduce((sum, item) => sum + (item.memories || []).length, 0); },
     proactiveCount() { return this.companions.filter(item => item.canAutoMessage).length; },
+    apiReady() { return Boolean(this.settings.apiEnabled && this.settings.apiBaseUrl.trim() && this.settings.apiModel.trim()); },
+    apiStatusText() {
+      if (!this.settings.apiEnabled) return '未启用，聊天使用本地模拟';
+      if (!this.settings.apiBaseUrl.trim() || !this.settings.apiModel.trim()) return '配置未完成';
+      return '已启用，发送消息时调用真实 API';
+    },
     userInitial() { return (this.settings.nickname || '你').slice(0, 1); },
     greetingText() {
       const hour = new Date().getHours();
@@ -163,7 +176,12 @@ const app = createApp({
     closeChat() { this.activeChatId = null; this.inputMessage = ''; },
     scrollChatToBottom() { document.querySelectorAll('.chat-messages').forEach(container => { container.scrollTop = container.scrollHeight; }); },
     refreshState() { const state = QingbanStore.getState(); this.companions = state.companions; this.settings = state.settings; this.profileForm = { nickname: state.settings.nickname, signature: state.settings.signature }; },
-    avatarStyle(item) { return { background: item && item.color ? item.color : '#8d83ee' }; },
+    avatarStyle(item) {
+      return {
+        backgroundColor: item && item.color ? item.color : '#8d83ee',
+        backgroundImage: item && item.avatarImage ? `url("${item.avatarImage}")` : 'none'
+      };
+    },
     lastTimestamp(id) { const companion = this.companions.find(item => item.id === id); return companion && companion.messages && companion.messages.length ? companion.messages[companion.messages.length - 1].timestamp : 0; },
     lastMessagePreview(id) { const companion = this.companions.find(item => item.id === id); if (!companion || !companion.messages || !companion.messages.length) return '还没有聊天记录，去打个招呼吧'; const message = companion.messages[companion.messages.length - 1]; return (message.role === 'user' ? '你：' : '') + message.content; },
     lastMessageTime(id) { const timestamp = this.lastTimestamp(id); if (!timestamp) return ''; const date = new Date(timestamp); const now = new Date(); if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }); return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }); },
@@ -171,7 +189,7 @@ const app = createApp({
     openCompanionEditor(companion) {
       if (!companion) return;
       this.editingCompanion = companion;
-      this.companionForm = { id: companion.id, name: companion.name, initial: companion.initial, color: companion.color, category: companion.category, tagline: companion.tagline, personality: companion.personality, greeting: companion.greeting, canAutoMessage: companion.canAutoMessage, frequency: companion.frequency, online: companion.online, unread: companion.unread, memories: companion.memories, messages: companion.messages };
+      this.companionForm = { ...thisBlankCompanion(), ...QingbanStore.clone(companion), avatarImage: companion.avatarImage || '' };
       this.showCompanionDialog = true;
     },
     saveCompanion() {
@@ -189,10 +207,121 @@ const app = createApp({
       if (!companion || !window.confirm('确定删除“' + companion.name + '”吗？聊天记录和长期记忆也会一起删除。')) return;
       QingbanStore.removeCompanion(companion.id); if (this.activeChatId === companion.id) this.activeChatId = null; this.refreshState(); this.showToast('已删除 ' + companion.name);
     },
-    sendMessage() {
-      const text = this.inputMessage.trim(); if (!text || !this.activeCompanion || this.isReplying) return;
-      const companionId = this.activeCompanion.id; QingbanStore.addMessage(companionId, { role: 'user', content: text }); this.inputMessage = ''; this.refreshState(); this.isReplying = true; this.$nextTick(() => this.scrollChatToBottom()); this.maybeCaptureMemory(text, companionId);
-      window.setTimeout(() => { const current = this.companions.find(item => item.id === companionId); if (!current) return; QingbanStore.addMessage(companionId, { role: 'assistant', content: this.generateReply(text, current) }); this.isReplying = false; this.refreshState(); this.$nextTick(() => this.scrollChatToBottom()); }, 650 + Math.round(Math.random() * 500));
+    async sendMessage() {
+      const text = this.inputMessage.trim();
+      if (!text || !this.activeCompanion || this.isReplying) return;
+      const companionId = this.activeCompanion.id;
+      QingbanStore.addMessage(companionId, { role: 'user', content: text });
+      this.inputMessage = '';
+      this.refreshState();
+      this.isReplying = true;
+      this.$nextTick(() => this.scrollChatToBottom());
+      this.maybeCaptureMemory(text, companionId);
+
+      let reply = '';
+      try {
+        const current = this.companions.find(item => item.id === companionId);
+        if (!current) return;
+        if (this.apiReady) {
+          reply = await this.requestApiReply(current);
+        } else {
+          await this.wait(650 + Math.round(Math.random() * 500));
+          reply = this.generateReply(text, current);
+          if (this.settings.apiEnabled) this.showToast('API 配置未完成，已使用本地回复');
+        }
+      } catch (error) {
+        console.warn('Qingban API request failed:', error);
+        reply = this.generateReply(text);
+        this.showToast('API 调用失败，已自动切换为本地回复');
+      } finally {
+        const current = this.companions.find(item => item.id === companionId);
+        if (current && reply) QingbanStore.addMessage(companionId, { role: 'assistant', content: reply });
+        this.isReplying = false;
+        this.refreshState();
+        this.$nextTick(() => this.scrollChatToBottom());
+      }
+    },
+    wait(milliseconds) { return new Promise(resolve => window.setTimeout(resolve, milliseconds)); },
+    apiEndpoint(kind) {
+      const base = String(this.settings.apiBaseUrl || '').trim().replace(/\/+$/, '');
+      const root = base.replace(/\/(?:chat\/completions|models)$/i, '');
+      if (kind === 'chat') return /\/chat\/completions$/i.test(base) ? base : root + '/chat/completions';
+      return /\/models$/i.test(base) ? base : root + '/models';
+    },
+    apiHeaders(includeJson = true) {
+      const headers = includeJson ? { 'Content-Type': 'application/json' } : {};
+      const apiKey = String(this.settings.apiKey || '').trim();
+      if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+      return headers;
+    },
+    apiTemperatureValue() {
+      const value = Number(this.settings.apiTemperature);
+      return Number.isFinite(value) ? Math.min(2, Math.max(0, value)) : 0.8;
+    },
+    async fetchWithTimeout(url, options, timeout = 30000) {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeout);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        window.clearTimeout(timer);
+      }
+    },
+    async parseApiResponse(response) {
+      const raw = await response.text();
+      let payload = {};
+      try { payload = raw ? JSON.parse(raw) : {}; } catch (error) { payload = { raw }; }
+      if (!response.ok) {
+        const message = payload && payload.error && payload.error.message ? payload.error.message : ('HTTP ' + response.status);
+        throw new Error(message);
+      }
+      return payload;
+    },
+    buildApiMessages(companion) {
+      const memories = (companion.memories || []).slice(0, 12).map(item => '- ' + item.title + '：' + item.content).join('\n');
+      const system = [
+        '你是青伴应用中的 AI 好友“' + companion.name + '”。',
+        '你与用户的关系类型是：' + companion.category + '。',
+        companion.tagline ? '你的简介：' + companion.tagline : '',
+        companion.personality ? '性格与说话方式：' + companion.personality : '',
+        '请像熟悉的朋友一样自然回应，先理解情绪，再给简短、具体、不说教的陪伴。不要声称自己是真人。',
+        memories ? '可参考的长期记忆：\n' + memories : '目前没有长期记忆。'
+      ].filter(Boolean).join('\n');
+      const history = (companion.messages || []).filter(item => item.role === 'user' || item.role === 'assistant').slice(-16).map(item => ({ role: item.role, content: String(item.content || '') }));
+      return [{ role: 'system', content: system }, ...history];
+    },
+    async requestApiReply(companion) {
+      const response = await this.fetchWithTimeout(this.apiEndpoint('chat'), {
+        method: 'POST',
+        headers: this.apiHeaders(),
+        body: JSON.stringify({
+          model: this.settings.apiModel.trim(),
+          messages: this.buildApiMessages(companion),
+          temperature: this.apiTemperatureValue()
+        })
+      });
+      const payload = await this.parseApiResponse(response);
+      const content = payload && payload.choices && payload.choices[0] && payload.choices[0].message && payload.choices[0].message.content;
+      if (typeof content === 'string' && content.trim()) return content.trim();
+      if (Array.isArray(content)) {
+        const text = content.map(item => typeof item === 'string' ? item : (item && item.text) || '').join('').trim();
+        if (text) return text;
+      }
+      throw new Error('API 没有返回可显示的文本');
+    },
+    async testApiConnection() {
+      if (!this.settings.apiBaseUrl.trim()) return this.showToast('请先填写 API Base URL');
+      this.apiTesting = true;
+      try {
+        const response = await this.fetchWithTimeout(this.apiEndpoint('models'), { method: 'GET', headers: this.apiHeaders(false) }, 15000);
+        await this.parseApiResponse(response);
+        this.showToast('API 连接测试成功');
+      } catch (error) {
+        console.warn('Qingban API connection test failed:', error);
+        this.showToast('连接失败，请检查地址、密钥和跨域设置');
+      } finally {
+        this.apiTesting = false;
+      }
     },
     sendQuickMessage(text) { this.inputMessage = text; this.sendMessage(); },
     generateReply(text) {
@@ -233,6 +362,51 @@ const app = createApp({
     memoryIcon(type) { return ({ preference: 'heart', event: 'clock', relationship: 'users' })[type] || 'brain'; },
     memoryDateValue(date) { return new Date(String(date).replace(/年|月/g, '-').replace(/日/g, '')).getTime() || 0; },
     toggleSetting(key) { this.settings[key] = !this.settings[key]; this.showToast(this.settings[key] ? '已开启' : '已关闭'); },
+    async handleAvatarUpload(event) {
+      const input = event.target;
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      if (!file.type.startsWith('image/')) return this.showToast('请选择图片文件');
+      if (file.size > 5 * 1024 * 1024) return this.showToast('头像图片不能超过 5 MB');
+      try {
+        this.companionForm.avatarImage = await this.compressAvatar(file);
+        this.showToast('头像已更新，保存后生效');
+      } catch (error) {
+        console.warn('Qingban avatar processing failed:', error);
+        this.showToast('头像处理失败，请换一张图片');
+      }
+    },
+    compressAvatar(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.onload = () => {
+          const image = new Image();
+          image.onerror = () => reject(new Error('图片格式不受支持'));
+          image.onload = () => {
+            const size = 256;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const context = canvas.getContext('2d');
+            if (!context) return reject(new Error('浏览器不支持图片处理'));
+            const scale = Math.max(size / image.width, size / image.height);
+            const width = image.width * scale;
+            const height = image.height * scale;
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            context.fillStyle = '#f7f7fb';
+            context.fillRect(0, 0, size, size);
+            context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.88));
+          };
+          image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+    removeAvatarImage() { this.companionForm.avatarImage = ''; this.showToast('已恢复为文字头像'); },
     editProfile() { this.profileForm = { nickname: this.settings.nickname, signature: this.settings.signature }; this.showProfileDialog = true; },
     saveProfile() { this.settings.nickname = this.profileForm.nickname.trim() || '林林'; this.settings.signature = this.profileForm.signature.trim() || '把日子过成被记住的样子'; this.showProfileDialog = false; this.showToast('个人资料已更新'); },
     exportData() { const blob = new Blob([JSON.stringify(QingbanStore.exportData(), null, 2)], { type: 'application/json;charset=utf-8' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'qingban-data-' + new Date().toISOString().slice(0, 10) + '.json'; link.click(); URL.revokeObjectURL(url); this.showToast('数据备份已导出'); },
@@ -243,7 +417,7 @@ const app = createApp({
   }
 });
 
-function thisBlankCompanion() { return { name: '', initial: '', color: '#8d83ee', category: '温柔陪伴', tagline: '', personality: '', greeting: '', canAutoMessage: true, memoryMode: 'curated' }; }
+function thisBlankCompanion() { return { name: '', initial: '', color: '#8d83ee', avatarImage: '', category: '温柔陪伴', tagline: '', personality: '', greeting: '', canAutoMessage: true, memoryMode: 'curated' }; }
 function thisBlankMemory(companions) { return { id: null, companionId: companions && companions.length ? companions[0].id : '', type: 'preference', title: '', content: '', date: todayLabel(), source: '手动添加' }; }
 
 app.mount('#app');
