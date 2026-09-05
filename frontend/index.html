@@ -3,43 +3,67 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#e7eaf2" />
-  <meta name="description" content="亲伴情感陪伴应用前端原型" />
-  <title>亲伴 · 前端产品原型</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='36' fill='none' stroke='%23776ee8' stroke-width='10'/%3E%3Cpath d='M34 54h31l10 10V38H34z' fill='%23ef9f98'/%3E%3C/svg%3E" />
+  <meta name="theme-color" content="#f5f6f7" />
+  <meta name="description" content="亲伴：用数字方式珍藏亲人的记忆与陪伴" />
+  <title>亲伴 · 珍藏记忆，继续陪伴</title>
+  <link rel="icon" href="assets/qinban-icon.svg" />
   <link rel="preconnect" href="https://unpkg.com" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 <div id="app">
+  <transition name="qinban-loading">
+    <div v-if="isBooting" class="qinban-loading" role="status" aria-label="亲伴正在打开">
+      <div class="loading-brand"><div class="brand-mark"><img src="assets/qinban-icon.svg" alt="" /></div><strong>亲伴</strong></div>
+      <div class="loading-scene" aria-hidden="true">
+        <svg viewBox="0 0 520 300" role="presentation">
+          <path class="scene-horizon" d="M44 237C133 213 188 223 260 238s127 26 216-4"/>
+          <path class="scene-link" d="M137 211C189 155 221 157 260 191s70 36 123-21"/>
+          <circle class="scene-link-dot" cx="260" cy="190" r="7"/>
+          <circle class="scene-link-dot small" cx="217" cy="170" r="4"/>
+          <circle class="scene-link-dot small" cx="304" cy="180" r="4"/>
+          <g class="scene-person scene-person-human">
+            <circle cx="126" cy="131" r="19"/>
+            <path d="M91 216c3-38 16-58 35-58s32 20 35 58Z"/>
+            <path class="scene-face" d="M139 130l8 4-8 3"/>
+          </g>
+          <g class="scene-person scene-person-memory">
+            <circle cx="394" cy="122" r="18"/>
+            <path d="M361 216c3-39 15-61 33-61s30 22 33 61Z"/>
+            <path class="scene-face" d="M381 121l-8 4 8 3"/>
+            <path class="scene-glow" d="M394 84V69M362 96l-10-10M426 96l10-10"/>
+          </g>
+          <path class="scene-ground" d="M54 239c62-13 104-13 154-2M312 237c54-10 101-10 154 1"/>
+        </svg>
+      </div>
+      <p class="loading-caption">正在连接记忆</p>
+      <div class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+  </transition>
   <div class="app-shell" :class="['theme-'+settings.theme,'font-'+settings.fontSize]" :style="{'--bubble-radius':settings.bubbleRadius+'px','--message-gap':settings.messageGap+'px'}">
     <aside class="sidebar">
-      <div class="brand-lockup"><div class="brand-mark"><span></span><i></i></div><div><div class="brand-name">亲伴</div><div class="brand-caption">把重要的陪伴，放在身边</div></div></div>
-      <button class="sidebar-profile" @click="navigate('mine')"><div class="user-avatar" :style="userAvatarStyle()"><span v-if="!settings.userAvatar">{{userInitial}}</span></div><div class="sidebar-profile-copy"><strong>{{settings.nickname}}</strong><span>{{settings.signature}}</span></div><span class="chevron">›</span></button>
-      <nav class="primary-nav"><button v-for="item in navItems" :key="item.id" class="nav-link" :class="{active:activeView===item.id}" @click="navigate(item.id)"><span class="nav-icon" v-html="icon(item.icon)"></span><span>{{item.label}}</span><em v-if="item.id==='inbox'&&unreadTotal" class="nav-count">{{unreadTotal}}</em></button></nav>
+      <div class="brand-lockup"><div class="brand-mark"><img src="assets/qinban-icon.svg" alt="" /></div><div><div class="brand-name">亲伴</div><div class="brand-caption">让珍贵的记忆，继续陪伴</div></div></div>
+      <nav class="primary-nav"><button v-for="item in navItems" :key="item.id" class="nav-link" :class="{active:activeView===item.id}" @click="navigate(item.id)"><span class="nav-icon" v-html="icon(item.icon)"></span><span>{{item.label}}</span></button></nav>
       <div class="sidebar-footer"><div class="local-badge"><span class="status-dot"></span>前端原型 · 本机数据</div><button class="sidebar-help" @click="showAbout=true"><span v-html="icon('info')"></span>产品说明</button></div>
     </aside>
 
     <main class="workspace">
-      <header class="topbar" :class="{'is-chat':activeView==='chat'}">
+      <header v-if="activeView!=='inbox'" class="topbar" :class="{'is-chat':activeView==='chat'}">
         <button v-if="isSecondaryView" class="back-button" @click="goBackSecondary"><span v-html="icon('arrow-left')"></span></button>
-        <div class="mobile-brand" v-if="activeView!=='chat'&&!isSecondaryView"><div class="brand-mark small"><span></span><i></i></div><strong>亲伴</strong></div>
+        <div class="mobile-brand" v-if="activeView!=='chat'&&!isSecondaryView"><div class="brand-mark small"><img src="assets/qinban-icon.svg" alt="" /></div><strong>亲伴</strong></div>
         <div class="topbar-heading" v-if="activeView!=='chat'"><h1>{{viewTitle}}</h1><p>{{viewSubtitle}}</p></div>
         <div class="topbar-actions">
-          <button v-if="activeView==='inbox'" class="round-action" @click="focusSearch"><span v-html="icon('search')"></span></button>
           <button v-if="activeView==='contacts'||activeView==='studio'" class="primary-action compact" @click="openNewCompanion"><span v-html="icon('plus')"></span>新建 AI</button>
           <button v-if="activeView==='moments'" class="primary-action compact" @click="openMomentDialog"><span v-html="icon('plus')"></span>发布动态</button>
           <button v-if="activeView==='memory-lab'" class="primary-action compact" @click="openMemoryDialog()"><span v-html="icon('plus')"></span>添加记忆</button>
-          <button v-if="activeView==='mine'" class="round-action" @click="openSettings('api')"><span v-html="icon('settings')"></span></button>
           <button v-if="activeView==='ai-detail'" class="primary-action compact" @click="saveCompanionDetails"><span v-html="icon('check')"></span>保存角色</button>
         </div>
       </header>
 
-      <section class="content-area" :class="{'chat-content':activeView==='chat'}">
+      <section class="content-area" :class="{'chat-content':activeView==='chat','inbox-content':activeView==='inbox'}">
         <!-- 会话：首页固定在应用视口内，聊天记录在右侧内部滚动 -->
         <div v-if="activeView==='inbox'" class="inbox-layout page-enter">
           <section class="conversation-panel card-surface">
-            <div class="section-toolbar"><div class="segmented-control"><button v-for="f in [{id:'all',name:'全部'},{id:'unread',name:'未读'},{id:'companion',name:'单聊'},{id:'group',name:'群聊'}]" :key="f.id" :class="{active:inboxFilter===f.id}" @click="inboxFilter=f.id">{{f.name}}</button></div><button class="toolbar-icon" @click="openGroupDialog()"><span v-html="icon('group')"></span></button></div>
             <label class="search-box"><span v-html="icon('search')"></span><input ref="searchInput" v-model="searchQuery" placeholder="搜索好友、群聊或消息" /></label>
             <div class="conversation-list">
               <button v-for="thread in filteredThreads" :key="thread.type+thread.threadId" class="conversation-item" :class="{active:activeChatRef&&activeChatRef.type===thread.type&&activeChatRef.id===thread.threadId}" @click="openThread(thread.type,thread.threadId)">
@@ -50,20 +74,18 @@
             </div>
             <button class="new-conversation" @click="openNewCompanion"><span v-html="icon('plus')"></span>创建一位 AI 好友</button>
           </section>
-          <section class="chat-panel card-surface"><chat-view v-if="activeThread" :thread="activeThread" :companions="companions" :messages="activeMessages" :is-replying="isReplying" :input-message="inputMessage" :api-active="activeChatApiReady" @update-input="inputMessage=$event" @send="sendMessage" @quick="sendQuickMessage" @proactive="sendProactiveMessage(activeThread)" @back="closeChat" @open-settings="openChatSettings(activeThread)"></chat-view><div v-else class="welcome-panel"><div class="welcome-orb"><span v-html="icon('message')"></span></div><span class="soft-label">亲伴前端原型</span><h2>选择一个会话，<br/>开始今天的陪伴。</h2><p>单聊、群聊、记忆与主动消息都已经有可点击页面。真实能力由后端接入。</p></div></section>
+          <section class="chat-panel"><chat-view v-if="activeThread" :thread="activeThread" :companions="companions" :messages="activeMessages" :is-replying="isReplying" :input-message="inputMessage" :api-active="activeChatApiReady" @update-input="inputMessage=$event" @send="sendMessage" @quick="sendQuickMessage" @proactive="sendProactiveMessage(activeThread)" @back="closeChat" @open-settings="openChatSettings(activeThread)" @notice="showToast"></chat-view></section>
         </div>
-        <div v-if="activeView==='chat'&&activeThread" class="chat-route page-enter"><chat-view :thread="activeThread" :companions="companions" :messages="activeMessages" :is-replying="isReplying" :input-message="inputMessage" :api-active="activeChatApiReady" @update-input="inputMessage=$event" @send="sendMessage" @quick="sendQuickMessage" @proactive="sendProactiveMessage(activeThread)" @back="closeChat" @open-settings="openChatSettings(activeThread)"></chat-view></div>
+        <div v-if="activeView==='chat'&&activeThread" class="chat-route page-enter"><chat-view :thread="activeThread" :companions="companions" :messages="activeMessages" :is-replying="isReplying" :input-message="inputMessage" :api-active="activeChatApiReady" @update-input="inputMessage=$event" @send="sendMessage" @quick="sendQuickMessage" @proactive="sendProactiveMessage(activeThread)" @back="closeChat" @open-settings="openChatSettings(activeThread)" @notice="showToast"></chat-view></div>
 
         <!-- AI 通讯录 -->
         <div v-if="activeView==='contacts'" class="contacts-page page-enter page-width">
-          <div class="page-hero compact-hero"><div><span class="soft-label">AI CONTACTS</span><h2>每位 AI 都有独立的关系、记忆与能力。</h2><p>前端提供角色入口与配置结构，后端可按 companionId 建立会话、记忆和模型绑定。</p></div><div class="hero-stat"><strong>{{companions.length}}</strong><span>AI 好友</span></div></div>
           <div class="list-toolbar"><label class="search-box"><span v-html="icon('search')"></span><input v-model="searchQuery" placeholder="搜索 AI 好友" /></label><div class="filter-pills"><button v-for="filter in contactCategories" :key="filter" :class="{active:contactFilter===filter}" @click="contactFilter=filter">{{filter==='all'?'全部':filter==='online'?'在线':filter}}</button></div></div>
           <div class="contact-grid"><article v-for="item in filteredContacts" :key="item.id" class="contact-card card-surface"><div class="contact-head"><div class="avatar large" :style="avatarStyle(item)"><span v-if="!item.avatarImage">{{item.initial}}</span><i v-if="item.online" class="online-dot"></i></div><div><span class="category-tag">{{item.category}}</span><h3>{{item.name}}</h3><p>{{item.tagline}}</p></div></div><div class="tag-row"><span v-for="tag in capabilityNames(item)" :key="tag">{{tag}}</span><span v-if="!capabilityNames(item).length">纯文本</span></div><div class="contact-meta"><span><b>{{(item.memories||[]).length}}</b> 条记忆</span><span><b>{{item.proactive?.enabled?'开启':'暂停'}}</b> 主动消息</span></div><div class="card-actions"><button class="primary-action" @click="openThread('companion',item.id)"><span v-html="icon('message')"></span>聊天</button><button class="secondary-action" @click="openCompanionEditor(item)">编辑角色</button><button class="icon-action" @click="openGroupDialog(null,item.id)"><span v-html="icon('group')"></span></button></div></article></div>
         </div>
 
         <!-- AI 朋友圈 -->
         <div v-if="activeView==='moments'" class="moments-page page-enter page-width narrow-page">
-          <div class="moments-control card-surface"><div class="moments-control-copy"><span class="settings-icon coral" v-html="icon('moments')"></span><div><strong>AI 主动朋友圈</strong><p>当前频率：{{settings.momentFrequency}} · 所有自动生成行为均为本地模拟</p></div></div><button class="switch" :class="{on:settings.momentAutoPost}" @click="settings.momentAutoPost=!settings.momentAutoPost"><i></i></button><button class="secondary-action" @click="simulateAiMoment">模拟一条</button></div>
           <div class="moment-feed"><article v-for="moment in moments" :key="moment.id" class="moment-card card-surface"><div class="moment-author"><div class="avatar" :style="avatarStyle(momentAuthor(moment))"><span v-if="!momentAuthor(moment).avatarImage">{{momentAuthor(moment).initial}}</span></div><div><strong>{{momentAuthor(moment).name}}</strong><span>{{formatRelativeTime(moment.createdAt)}} · {{moment.visibility}}</span></div><button class="icon-action" @click="toggleMomentSave(moment)" :class="{active:moment.saved}"><span v-html="icon('bookmark')"></span></button></div><p class="moment-text">{{moment.content}}</p><div v-if="moment.imageTone" class="moment-image" :class="moment.imageTone"><span v-html="icon('image')"></span><small>图片内容占位 · 等待后端生成或上传</small></div><div class="moment-actions"><button :class="{liked:moment.liked}" @click="toggleMomentLike(moment)"><span v-html="icon('heart')"></span>{{moment.liked?'已赞':'点赞'}}</button><button><span v-html="icon('comment')"></span>{{moment.comments.length}} 评论</button><span>{{moment.likes.length?moment.likes.join('、')+' 觉得很暖':'还没有点赞'}}</span></div><div v-if="moment.comments.length" class="comment-list"><p v-for="c in moment.comments" :key="c.id"><strong>{{c.author}}</strong> {{c.content}}</p></div><div class="comment-composer"><input v-model="commentDrafts[moment.id]" @keydown.enter="addMomentComment(moment)" placeholder="写一句回应…"/><button @click="addMomentComment(moment)">发送</button></div></article></div>
         </div>
         <!-- AI 与群聊工作台 -->
@@ -102,11 +124,8 @@
         </div>
         <!-- 我的 -->
         <div v-if="activeView==='mine'" class="mine-page page-enter page-width narrow-page">
-          <section class="profile-hero card-surface"><div class="user-avatar xl" :style="userAvatarStyle()"><span v-if="!settings.userAvatar">{{userInitial}}</span></div><div><span class="soft-label">MY QINBAN</span><h2>{{settings.nickname}}</h2><p>{{settings.signature}}</p><div class="profile-tags"><span>AI 好友 {{companions.length}}</span><span>收藏 {{savedMoments.length}}</span><span>本机原型</span></div></div><button class="secondary-action" @click="editProfile"><span v-html="icon('edit')"></span>编辑资料</button></section>
-          <div class="mine-quick-grid"><button @click="openUtility('favorites')"><span class="settings-icon coral" v-html="icon('bookmark')"></span><div><strong>我的收藏</strong><p>{{savedMoments.length}} 条朋友圈动态</p></div><span class="chevron">›</span></button><button @click="openUsage"><span class="settings-icon purple" v-html="icon('chart')"></span><div><strong>API 损耗详情</strong><p>Token 与费用前端估算</p></div><span class="chevron">›</span></button><button @click="openSettings('api')"><span class="settings-icon mint" v-html="icon('settings')"></span><div><strong>设置中心</strong><p>API、能力、外观、高级</p></div><span class="chevron">›</span></button><button @click="navigate('memory-lab')"><span class="settings-icon blue" v-html="icon('database')"></span><div><strong>后端数据台</strong><p>记忆、向量和接口契约</p></div><span class="chevron">›</span></button></div>
-          <section class="mine-section card-surface"><div class="settings-section-title"><span class="settings-icon purple" v-html="icon('user')"></span><div><h3>个人与产品</h3><p>项目公开信息，不放入参考产品的外部联系方式</p></div></div><button class="menu-row" @click="editProfile"><div><strong>个人人设与头像</strong><span>{{settings.userPersona}}</span></div><span class="chevron">›</span></button><button class="menu-row" @click="openUtility('team')"><div><strong>开发团队</strong><span>亲伴前端与后端协作说明</span></div><span class="chevron">›</span></button><button class="menu-row" @click="openUtility('agreement')"><div><strong>用户协议与隐私政策</strong><span>本地数据、API Key 与内容边界</span></div><span class="chevron">›</span></button><button class="menu-row" @click="openUtility('updates')"><div><strong>更新说明</strong><span>v{{settings.version}} · 2026-09-03</span></div><span class="chevron">›</span></button></section>
-          <section class="mine-section card-surface"><div class="settings-section-title"><span class="settings-icon mint" v-html="icon('database')"></span><div><h3>本地数据</h3><p>为团队联调准备可导出、可恢复的演示数据</p></div></div><button class="menu-row" @click="exportData"><div><strong>导出数据</strong><span>自动移除 API Key</span></div><span v-html="icon('download')"></span></button><button class="menu-row" @click="triggerImport"><div><strong>导入数据</strong><span>从亲伴 JSON 恢复本机原型</span></div><span v-html="icon('upload')"></span></button><button class="menu-row" @click="resetDemo"><div><strong>恢复演示数据</strong><span>重置角色、群聊、朋友圈与设置</span></div><span v-html="icon('refresh')"></span></button><button class="menu-row danger" @click="clearAllData"><div><strong>清空本机业务数据</strong><span>不会删除项目源文件</span></div><span v-html="icon('trash')"></span></button></section>
-          <div class="version-note">亲伴 v{{settings.version}} · 当前仅前端架构与显示布局</div>
+          <section class="profile-hero card-surface"><div class="user-avatar xl" :style="userAvatarStyle()"><span v-if="!settings.userAvatar">{{userInitial}}</span></div><div><h2>{{settings.nickname}}</h2><p>{{settings.signature}}</p></div><button class="secondary-action" @click="editProfile"><span v-html="icon('edit')"></span>编辑资料</button></section>
+          <section class="mine-section mine-simple-menu card-surface"><button class="menu-row" @click="openSettings('api')"><span class="settings-icon mint" v-html="icon('settings')"></span><div><strong>设置</strong><span>账号、外观与使用设置</span></div><span class="chevron">›</span></button><button class="menu-row" @click="openUtility('my-moments')"><span class="settings-icon coral" v-html="icon('moments')"></span><div><strong>朋友圈</strong><span>{{myMoments.length}} 条自己发布的动态</span></div><span class="chevron">›</span></button></section>
         </div>
 
         <!-- 设置中心 -->
@@ -137,7 +156,7 @@
         </div>
       </section>
 
-      <nav class="bottom-nav" v-if="activeView!=='chat'&&!isSecondaryView"><button v-for="item in mobileNavItems" :key="item.id" :class="{active:activeView===item.id}" @click="navigate(item.id)"><span v-html="icon(item.icon)"></span><em>{{item.label==='AI 通讯录'?'通讯录':item.label==='AI 朋友圈'?'朋友圈':item.label==='AI 与群聊'?'AI':item.label}}</em><i v-if="item.id==='inbox'&&unreadTotal">{{unreadTotal}}</i></button></nav>
+      <nav class="bottom-nav" v-if="activeView!=='chat'&&!isSecondaryView"><button v-for="item in mobileNavItems" :key="item.id" :class="{active:activeView===item.id}" @click="navigate(item.id)"><span v-html="icon(item.icon)"></span><em>{{item.label==='AI 通讯录'?'通讯录':item.label==='AI 朋友圈'?'朋友圈':item.label==='AI 与群聊'?'AI':item.label}}</em></button></nav>
     </main>
   </div>
 
@@ -153,14 +172,15 @@
   <div v-if="showMomentDialog" class="modal-backdrop" @click.self="closeModal"><section class="modal-card"><div class="modal-head"><div><span class="soft-label">NEW MOMENT</span><h2>发布朋友圈动态</h2></div><button class="round-action" @click="closeModal"><span v-html="icon('close')"></span></button></div><div class="modal-scroll"><label class="form-field"><span>内容</span><textarea v-model="momentForm.content" rows="7" maxlength="500" placeholder="分享一段今天的想法…"></textarea></label><div class="form-grid"><label class="form-field"><span>可见范围</span><select v-model="momentForm.visibility"><option>所有好友</option><option>仅你可见</option><option>部分 AI 可见</option></select></label><label class="form-field"><span>图片占位</span><select v-model="momentForm.imageTone"><option value="">无图片</option><option value="lavender">薰衣草色</option><option value="mint">薄荷色</option><option value="coral">暖珊瑚色</option></select></label></div><div class="privacy-note"><span v-html="icon('info')"></span><p>当前发布只写入本机 localStorage，不会上传到网络。</p></div></div><div class="modal-foot"><button class="secondary-action" @click="closeModal">取消</button><button class="primary-action" @click="publishMoment">发布动态</button></div></section></div>
 
   <!-- 我的页面信息弹窗 -->
-  <div v-if="utilityPanel" class="modal-backdrop" @click.self="closeModal"><section class="modal-card utility-modal"><div class="modal-head"><div><span class="soft-label">QINBAN INFO</span><h2>{{utilityPanel==='favorites'?'我的收藏':utilityPanel==='team'?'开发团队':utilityPanel==='agreement'?'用户协议与隐私政策':'更新说明'}}</h2></div><button class="round-action" @click="closeModal"><span v-html="icon('close')"></span></button></div><div class="modal-scroll utility-content">
+  <div v-if="utilityPanel" class="modal-backdrop" @click.self="closeModal"><section class="modal-card utility-modal"><div class="modal-head"><div><span class="soft-label">QINBAN INFO</span><h2>{{utilityPanel==='my-moments'?'我的朋友圈':utilityPanel==='favorites'?'我的收藏':utilityPanel==='team'?'开发团队':utilityPanel==='agreement'?'用户协议与隐私政策':'更新说明'}}</h2></div><button class="round-action" @click="closeModal"><span v-html="icon('close')"></span></button></div><div class="modal-scroll utility-content">
+    <div v-if="utilityPanel==='my-moments'"><article v-for="item in myMoments" :key="item.id" class="favorite-row"><div class="user-avatar" :style="userAvatarStyle()"><span v-if="!settings.userAvatar">{{userInitial}}</span></div><div><strong>{{settings.nickname}}</strong><p>{{item.content}}</p><small>{{formatRelativeTime(item.createdAt)}} · {{item.visibility}}</small></div></article><div v-if="!myMoments.length" class="mini-empty">你还没有发布朋友圈</div></div>
     <div v-if="utilityPanel==='favorites'"><article v-for="item in savedMoments" :key="item.id" class="favorite-row"><div class="avatar" :style="avatarStyle(momentAuthor(item))"><span>{{momentAuthor(item).initial}}</span></div><div><strong>{{momentAuthor(item).name}}</strong><p>{{item.content}}</p></div><button @click="toggleMomentSave(item)"><span v-html="icon('bookmark')"></span></button></article><div v-if="!savedMoments.length" class="mini-empty">还没有收藏内容</div></div>
     <div v-if="utilityPanel==='team'" class="document-copy"><p>亲伴当前阶段由前端原型与后端研发协作完成。此页面只保留团队职能和仓库交付说明，不引用任何参考产品中的 QQ、客服、赞助者或其他外部联系方式。</p><h3>前端当前职责</h3><ul><li>页面信息架构与响应式布局</li><li>可点击交互和本地模拟数据</li><li>API、记忆、多 AI 群聊的数据契约展示</li></ul><h3>后端后续职责</h3><ul><li>账号、会话、长期记忆、向量检索</li><li>API 密钥代理、模型路由与用量统计</li><li>主动消息、多 AI 调度、语音视觉与安全审计</li></ul></div>
     <div v-if="utilityPanel==='agreement'" class="document-copy"><h3>原型阶段说明</h3><p>本原型数据默认保存在当前浏览器。API Key 如被填写也只用于本机联调，导出数据时会移除。正式版本必须迁移到安全的后端密钥管理。</p><h3>隐私与控制权</h3><ul><li>用户应能查看、导出、修改和删除个人数据与 AI 记忆。</li><li>声音复刻必须获得明确授权，支持撤销和审计。</li><li>不实现强制锁屏、读取设备使用情况或控制设备等高风险功能。</li><li>AI 不冒充现实人员，不诱导依赖，不替代医疗或紧急支持。</li></ul></div>
     <div v-if="utilityPanel==='updates'" class="document-copy"><h3>v0.4.0-frontend · 2026-09-03</h3><ul><li>补齐会话、通讯录、AI 群聊和多角色消息原型。</li><li>新增 AI 朋友圈、点赞、评论、收藏与主动发布模拟。</li><li>新增详细人设、记忆、风格、主动频率与能力设置。</li><li>新增后端记忆数据台、向量检索调试和接口契约。</li><li>新增多 API 配置、模型识别、能力设置和用量诊断。</li><li>重新约束应用高度与页面内部滚动，优化文字清晰度。</li></ul><h3>当前状态</h3><p>仅供本地审核，尚未作为本轮更新提交或推送仓库。</p></div>
   </div><div class="modal-foot"><button class="primary-action full" @click="closeModal">知道了</button></div></section></div>
 
-  <div v-if="showAbout" class="modal-backdrop" @click.self="showAbout=false"><section class="modal-card about-modal"><div class="about-mark"><div class="brand-mark"><span></span><i></i></div></div><span class="soft-label">亲伴 · FRONTEND PROTOTYPE</span><h2>页面先完整，<br/><em>能力后接入。</em></h2><p>当前版本专注前端架构、显示布局和数据契约。所有数据库、向量库、主动任务、多 AI 调度及多模态能力均等待后端研发。</p><div class="about-points"><div><span v-html="icon('shield')"></span><strong>安全边界</strong><small>不复制外部联系方式与高风险设备控制</small></div><div><span v-html="icon('database')"></span><strong>数据可见</strong><small>为后端明确展示字段与待接入状态</small></div><div><span v-html="icon('palette')"></span><strong>布局清晰</strong><small>固定应用高度，内容在页内滚动</small></div></div><button class="primary-action full" @click="showAbout=false">开始审核</button></section></div>
+  <div v-if="showAbout" class="modal-backdrop" @click.self="showAbout=false"><section class="modal-card about-modal"><div class="about-mark"><div class="brand-mark"><img src="assets/qinban-icon.svg" alt="" /></div></div><span class="soft-label">亲伴 · FRONTEND PROTOTYPE</span><h2>页面先完整，<br/><em>能力后接入。</em></h2><p>亲伴希望用数字方式珍藏重要亲人的记忆，让熟悉的故事、语气和陪伴在安全边界内被好好记住。</p><div class="about-points"><div><span v-html="icon('shield')"></span><strong>安全边界</strong><small>尊重逝者与家属的授权、隐私和退出权</small></div><div><span v-html="icon('database')"></span><strong>记忆可见</strong><small>支持查看、导出、修改和删除数字记忆</small></div><div><span v-html="icon('palette')"></span><strong>温和陪伴</strong><small>用清晰克制的方式承接思念，不制造依赖</small></div></div><button class="primary-action full" @click="showAbout=false">开始审核</button></section></div>
 
   <input ref="importFile" class="sr-only" type="file" accept="application/json" @change="importData"/>
   <transition name="toast"><div v-if="toastMessage" class="toast-message"><span v-html="icon('check')"></span>{{toastMessage}}</div></transition>
