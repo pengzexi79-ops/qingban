@@ -90,13 +90,13 @@ func RegisterRoutes(g *gin.Engine) {
 	protect.DELETE("/files/:fileId", hDeleteFile)
 	protect.POST("/files/purge-orphans", hPurgeOrphans)
 
-	// ---- P3 API 配置 ----
-	protect.GET("/api-profiles", hListApiProfiles)
-	protect.POST("/api-profiles", hCreateApiProfile)
-	protect.PATCH("/api-profiles/:profileId", hPatchApiProfile)
-	protect.DELETE("/api-profiles/:profileId", hDeleteApiProfile)
-	protect.POST("/api-profiles/:profileId/test", hTestApiProfile)
-	protect.GET("/api-profiles/:profileId/models", hListApiProfileModels)
+	// ---- P3 API/模型配置(ModelConfig 基准;原 ApiProfile 系已取代) ----
+	protect.GET("/api-profiles", hListModelConfigs)
+	protect.POST("/api-profiles", hCreateModelConfig)
+	protect.PATCH("/api-profiles/:profileId", hPatchModelConfig)
+	protect.DELETE("/api-profiles/:profileId", hDeleteModelConfig)
+	protect.POST("/api-profiles/:profileId/test", hTestModelConfig)
+	protect.GET("/api-profiles/:profileId/models", hListModelConfigModels)
 
 	// ---- P2 用量 ----
 	protect.GET("/usage/summary", hGetUsageSummary)

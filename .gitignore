@@ -23,4 +23,9 @@ npm-debug.log*
 .cache/
 *.cache
 
+# ClawBot 联调凭据(扫码登录产物,含 bot_token 与网关 baseurl,勿入库)
+tests/clawbot/.creds/
+# 联调 scratch 编译产物(不入库)
+tests/**/*.exe
+
 docs/tem/

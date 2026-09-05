@@ -10,6 +10,7 @@ type Config struct {
 	// Windows %LOCALAPPDATA%/qingban;macOS ~/Library/Application Support/qingban;Linux ~/.local/share/qingban
 	DataDir string
 
+	//TODO:host和Port应该使用编译期注入变量
 	// Host:监听地址,默认 127.0.0.1(只允许本机;Wails 壳与浏览器同机)。
 	Host string
 
@@ -19,7 +20,7 @@ type Config struct {
 	// DBPath:SQLite 路径,派生自 DataDir(默认 {DataDir}/qingban.db)。
 	DBPath string
 
-	// LogLevel:zap 日志级别(debug/info/warn/error),默认 info;联调可设 debug 观察 SSE。
+	// LogLevel:logrus 日志级别(debug/info/warn/error),默认 info;联调可设 debug 观察 SSE。
 	LogLevel string
 
 	// LogToFile:是否写文件日志(默认 true,{DataDir}/logs/app.log)。
@@ -42,6 +43,7 @@ func DefaultConfig() *Config {
 	}
 }
 
+// TODO使用Windows标准应用缓存路径
 // LoadConfig:按"env/默认"顺序加载并派生路径(DataDir→DBPath→子目录),结果赋给全局 Cfg。
 func LoadConfig() (*Config, error) {
 	// cfg := DefaultConfig()                                        // ① 默认值

@@ -1,29 +1,34 @@
 package core
 
 // 全局变量与动态运行时(对应骨架注释:此处存放全局变量和动态运行时)。
-// 架构说明:青伴为"本地单用户空间",后端进程内只有一个数据空间,
-// 故采用包级全局单例存放运行时对象,由 init 包统一赋值;未来多账号/多空间
-// 再迁移为显式依赖注入(将依赖收敛进一个 AppContext 结构体,调用点不变)。
+// 架构说明:青伴当前形态 = 桌面本地应用(Wails 壳 + 本机后端 + 本地 SQLite),
+// "本地单用户空间"是既定架构而非过渡态:后端进程只服务本机一个用户。
+// 故采用包级全局单例存放运行时对象,由 init 包统一赋值;
+// 云端多用户/备份属日后独立阶段,届时再引入账号体系与依赖注入,不预埋实现。
 //
 // 约定:本文件变量仅供 init 赋值、server/AI 只读,业务层不允许再赋值。
-// 依赖说明:计划 import "gorm.io/gorm"、"go.uber.org/zap"(go.mod 尚未引入,伪代码阶段以注释注明)。
+// 依赖说明:gorm.io/gorm 与 github.com/sirupsen/logrus 已入 go.mod。
 
-import "time"
+import (
+	"time"
+
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+)
 
 // Cfg:进程配置(端口、数据目录、日志级别等)。
 // 由 init 包在启动第一步加载(默认值见 config.go),全局只读。
 var Cfg *Config
 
 // DB:本地 SQLite 主库连接(GORM)。
-// 全部业务表(users/companions/messages/...)的唯一读写入口;由 init.OpenDB() 赋值。
-// 单机形态无连接池竞争;需开启 WAL 并设置 busy_timeout(见 config.go 注释)。
-// 类型计划:*gorm.DB
-var DB any
+// 全部业务表的唯一读写入口;由 init.OpenDB() 赋值(开启 WAL + busy_timeout)。
+// 类型已随 gorm 依赖落地;driver(gorm.io/driver/sqlite)在 init 实现阶段引入。
+var DB *gorm.DB
 
-// Log:进程内结构化日志(zap)。
-// 业务层统一用 core.Log.Info/Error 记录(带 traceId 字段),避免散落 fmt。
-// 类型计划:*zap.Logger
-var Log any
+// Log:进程内结构化日志(logrus)。
+// 业务层统一用 core.Log.WithField("traceId",...).Info/Error 记录,避免散落 fmt;
+// 由 init 包按 cfg.LogLevel 装配(console + 可选文件输出)。
+var Log *logrus.Logger
 
 // Hub:本地实时事件总线(SSE /events 的数据源,见 event.go)。
 // 新消息/已读/群聊轮次/settings_changed 等均通过 Hub.Publish 广播给所有已连接前端。
@@ -44,7 +49,7 @@ var LocalToken string
 //	{DataDir}/secret.key  密钥文件(API Key 加密用 AES-256-GCM,见 utils/secret.go)
 //	{DataDir}/token.txt   本地访问令牌
 //	{DataDir}/files/      附件根目录({DataDir}/files/{fileId},见 model/file.go)
-//	{DataDir}/logs/       zap 日志文件
+//   {DataDir}/logs/       logrus 日志文件(可选,见 cfg.LogToFile)
 var DataDir string
 
 // StartTime:进程启动时刻(UTC)。

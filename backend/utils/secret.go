@@ -3,7 +3,9 @@ package utils
 // 密钥盒:API Key 等敏感字符串的本地加密存储(AES-256-GCM,主密钥落数据目录 secret.key)。
 // 原则(架构文档):明文只在创建/更新那一次 HTTP 请求出现;导出/备份/列表永不返回明文,
 // 只返回 secretConfigured 与 maskedKey。
-// 生产加固方向(本阶段不实现):Windows DPAPI / macOS Keychain / Linux libsecret(见 api接口.md §5.2)。
+// 生产加固方向(属于桌面端本地能力选型,当前阶段不实现;待引入 Wails 原生能力时评估):
+// Windows DPAPI / macOS Keychain / Linux libsecret。当前"数据目录 secret.key"已满足
+// 本地单用户威胁模型(防明文文件散步),升级路径不变、不影响任何调用方。
 
 import (
 	"crypto/aes"

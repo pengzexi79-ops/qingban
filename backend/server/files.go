@@ -7,8 +7,7 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
-
-	"qingban/model"
+	// 实现时按需恢复:"qingban/model"(File 实体)等
 )
 
 // 大小限制(与 openapi 契约一致,单位字节):
@@ -51,7 +50,7 @@ func hUploadFile(c *gin.Context) {
 // hGetFile:GET /files/:fileId?thumbnail=1 —— 读取/下载。
 func hGetFile(c *gin.Context) {
 	// f := db.Find(File{id: param}); if f == nil { respondErr(404, "文件不存在"); return }
-	// // 归属校验:本地单用户空间 → 该行即属于本空间;未来多账号按 user_id 过滤
+	// // 归属校验:桌面本地形态下 files 表即本空间私有,无需额外过滤(多账号阶段再考虑 user_id 分列)
 	// path := filePathOf(f.ID); if c.Query("thumbnail") == "1" && f.ThumbFileID != nil { path = thumbPathOf(f) }
 	// c.Header("Content-Type", f.MimeType)
 	// // Content-Disposition:kind==image → inline 预览;else attachment(原名 f.OrigName)

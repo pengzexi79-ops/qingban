@@ -1,8 +1,10 @@
 package server
 
 // HTTP 中间件:令牌鉴权、traceId、幂等键。
-// 鉴权背景(PHASE1 §2):本地单用户空间 + 启动令牌 X-Local-Token;
-// 浏览器调试模式(core.Cfg.AllowEmptyToken)可留空;云端阶段替换为账号令牌体系。
+// 鉴权背景(PHASE1 §2):桌面本地进程,监听 127.0.0.1;启动令牌 X-Local-Token
+// 仅作"本机进程间护栏"(防浏览器其他网页误连),非账号体系;
+// 浏览器调试模式(core.Cfg.AllowEmptyToken)可留空。日后若引入云账号,
+// 令牌头之上再叠加登录态,接口面不变。
 // 伪代码草稿:中间件闭包内为逻辑占位;实现时恢复 import(qingban/core、qingban/utils 等)。
 
 import (

@@ -7,20 +7,20 @@ package main
 //   initapp "qingban/init" // init 包负责按顺序完成全部初始化并返回可运行的 App(与骨架目录注释一致:引入 core 并初始化;目录 init,包名 initapp)
 //   "qingban/core"         // 读取全局变量(端口、令牌等)供启动日志使用
 //   "qingban/utils"        // 生成 traceId 等
-//   "go.uber.org/zap"
+//   "github.com/sirupsen/logrus"
 
 func main() {
 	// ============ 1. 记录启动日志 ============
-	// 说明:启动日志尚未初始化,先打一条无格式日志占位(如 fmt.Println 或 zap 的前置 console);
+	// 说明:core.Log(logrus)由 init 第 2 步装配,此处仅以 fmt 占位或直接委托;
 	// 记录:进程启动、go 版本、编译注入版本(core.BuildVersion, 见 core/comiler_vol.go)。
 	// 变量说明:
 	//   startTime := time.Now()  // 启动时刻,用于统计启动耗时与 uptime
 	//   traceID  := utils.NewID() // 本次启动会话 traceId,贯穿后续初始化日志
 
 	// ============ 2. 初始化:委托 init 包(骨架目录职责:引入 core 并初始化,返回初始化后的 core 变量) ============
-	// 调用:app := init.NewApp()  (内部完成:加载配置→建 zap 日志→打开/迁移 SQLite→
-	//                              种默认用户与 Ollama API 配置→装载/生成本地令牌→建 SSE Hub 与幂等表→注册路由→端口顺延监听)
-	// 若 err != nil:记录致命日志并退出(exit code 1)
+	// 调用:app := init.NewApp()  (内部完成:加载配置→装配 logrus 日志→打开/迁移 SQLite→
+	//                              种默认用户与 Ollama 默认模型配置→装载/生成本地令牌→建 SSE Hub 与幂等表→注册路由→端口顺延监听)
+	// 若 err != nil:core.Log.Fatal(err)(退出码 1)
 
 	// ============ 3. 启动服务循环 ============
 	// 调用:app.Run()

@@ -1,10 +1,12 @@
 package initapp
 
 // 启动编排(目录 init/,包名 initapp,规避关键字 init)。
+// 形态:桌面本地后端进程(Wails 壳同机启动,监听 127.0.0.1),与服务器部署无关;
+// 云端备份/多设备同步属日后独立阶段,本编排不承载任何上云职责。
 // 骨架目录职责(init/enter.go):引入 core 并进行初始化,返回初始化后的 core 变量。
 // 本文件为伪代码草稿:每一步的"预备编码位置"以编号注释说明将执行的逻辑;
 // 计划依赖(阶段实现时加入 go.mod):gin、gorm.io/gorm、gorm.io/driver/sqlite、
-// go.uber.org/zap、github.com/google/uuid(如需)。
+// github.com/sirupsen/logrus(已入 go.mod)、github.com/google/uuid(如需)。
 
 // App:初始化完成后的运行对象(main 持有并阻塞运行)。
 // 字段作用:
@@ -24,8 +26,9 @@ func NewApp() (*App, error) {
 	// 赋值:core.Cfg = cfg;core.DataDir = cfg.DataDir
 	// 准备目录:MkdirAll(DataDir/files)、MkdirAll(DataDir/logs)
 
-	// ========== 2. 初始化日志(zap) ==========
-	// 逻辑:按 cfg.LogLevel 建 zap(console+文件双输出);core.Log 赋值
+	// ========== 2. 初始化日志(logrus) ==========
+	// 逻辑:按 cfg.LogLevel 建 logrus.Logger(console 必出;LogToFile=true 时追加
+	//   {DataDir}/logs/app.log 输出,建议带 caller 与文本/JSON 格式按形态选择);core.Log 赋值
 	// 日志:启动横幅(BuildVersion/Commit/BuildTime/DataDir)
 
 	// ========== 3. 装载/生成密钥盒(API Key 加密) ==========

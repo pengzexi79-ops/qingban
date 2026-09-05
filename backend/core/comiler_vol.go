@@ -1,6 +1,7 @@
 package core
 
-// 本文件存放"编译期注入的变量"(对应骨架注释:comiler_vol = 编译期注入变量,例如服务器地址)。
+// 本文件存放"编译期注入的变量"(对应骨架注释:comiler_vol = 编译期注入变量,
+// 例如对外服务地址——桌面形态下即本地后端的监听地址)。
 // 生产构建时通过 ldflags -X 注入;本地 go run / 开发模式使用默认值。
 // 例:go build -ldflags "-X qingban/core.Version=0.2.0-phase1 -X qingban/core.Commit=abc1234"
 

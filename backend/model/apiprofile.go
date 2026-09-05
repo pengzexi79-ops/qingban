@@ -1,5 +1,9 @@
 package model
 
+// Deprecated:本实体(ApiProfile/ModelInfo)将被 model_config.go 的 ModelConfig 取代——
+// "一个 API 配置等价一个模型配置",能力经 ModelConfig 开关与子模型自引用表达。
+// 保留原因:companion.api_profile_id 等旧引用与前端早期契约兼容,迁移完成后再删除。
+
 // API 配置实体:api_profiles 表。
 // 原则(BACKEND_HANDOFF §2/§6):服务端返回绝不携带明文密钥,只返回 secretConfigured/
 // maskedKey;密钥加密落库(utils.SecretBox,AES-256-GCM);删除受"至少保留一套"保护。

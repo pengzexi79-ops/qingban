@@ -4,8 +4,6 @@ package common
 // 依赖:github.com/gin-gonic/gin(已在 go.mod)。所有 handler 通过本层返回,保证错误体结构一致。
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 )
 

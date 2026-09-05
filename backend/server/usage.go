@@ -6,8 +6,7 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
-
-	"qingban/model"
+	// 实现时按需恢复:"qingban/model"(UsageRecord 实体)等
 )
 
 // UsageSummaryView:GET /usage/summary 响应(openapi UsageSummary)。

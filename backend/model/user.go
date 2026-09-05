@@ -42,7 +42,8 @@ type AdvancedSettings struct {
 	MemoryThreshold float64 `json:"memoryThreshold"`
 }
 
-// BackupSettings:云端备份设置(第三阶段生效;字段随设置保存与导入兼容)。
+// BackupSettings:备份设置(桌面本地暂不执行;字段随设置透传保存,兼容前端/导入数据)。
+// 说明:云端加密备份是日后独立阶段,本阶段不实现上传逻辑,只保证字段往返无损。
 type BackupSettings struct {
 	// Enabled:是否开启自动备份(默认 false)。
 	Enabled bool `json:"enabled"`
@@ -74,7 +75,7 @@ type UserSettings struct {
 	MomentFrequency string `json:"momentFrequency"`
 	// Advanced:高级请求参数。
 	Advanced *AdvancedSettings `json:"advanced,omitempty"`
-	// Backup:云端备份设置(第三阶段)。
+	// Backup:备份设置(桌面本地暂不执行;仅透传保存兼容前端字段)。
 	Backup *BackupSettings `json:"backup,omitempty"`
 	// Theme:浅色/深色主题(纯前端展示,后端透传)。
 	Theme string `json:"theme"`

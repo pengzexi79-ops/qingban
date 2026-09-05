@@ -50,7 +50,8 @@ type GroupRoundArgs struct {
 	Now time.Time
 }
 
-// groupLock:进程内群互斥(防止连点触发与冷却竞态并发跑两轮;单机足够,云阶段再上分布式锁)。
+// groupLock:进程内群互斥(防止连点触发与冷却竞态并发跑两轮)。
+// 桌面本地单进程形态下即终态;若日后出现多进程形态再另行评估。
 var groupLock = newGroupLocks()
 
 // RunGroupRound:同步执行一轮群聊(调用点:POST /groups/{id}/rounds)。

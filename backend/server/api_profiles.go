@@ -1,134 +1,109 @@
 package server
 
-// P3 API 配置端点:CRUD、连通测试、模型目录(密钥本机加密,浏览器不直连)。
-// 密钥纪律:apiKey 只在 POST/PATCH 请求体出现一次 → SecretBox 加密落库;
-// 任何读取响应只带 secretConfigured/maskedKey(见 model/apiprofile.go)。
+// P3 API/模型配置端点:CRUD、连通测试、模型目录(密钥本机加密,浏览器不直连)。
+// 基准实体:model.ModelConfig(一个 API 配置 ≡ 一个模型配置,能力开关+子模型自引用);
+// ApiProfile 旧契约行仅作迁移兼容(见 model/apiprofile.go Deprecated 注记)。
+// 密钥纪律:apiKey 只在 POST/PATCH 请求体出现一次 → utils.SecretBox 加密落库;
+// 读取/列表/导出永不回明文(响应层以 SecretConfigured 布尔替代)。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位(实现时按需恢复 import)。
 
 import (
 	"github.com/gin-gonic/gin"
 
 	"qingban/model"
-	"qingban/utils"
+	// 实现时按需恢复:"qingban/utils"(SecretBox 加密)等
 )
 
-// ApiProfileCreateReq:POST /api-profiles 请求体(契约必填:name/provider/baseUrl)。
-type ApiProfileCreateReq struct {
-	// Name:配置名(≤30,必填)。
-	Name string `json:"name" binding:"required,max=30"`
-	// Provider:服务商标识(必填:openai/anthropic/ollama/qwen/custom)。
-	Provider string `json:"provider" binding:"required"`
-	// Region:展示分组(国内/国外/本地/自定义)。
-	Region string `json:"region"`
-	// Protocol:载荷协议(缺省 openai-compatible)。
-	Protocol string `json:"protocol" binding:"omitempty,oneof=openai-compatible anthropic ollama"`
-	// BaseUrl:服务端地址(必填)。
-	BaseUrl string `json:"baseUrl" binding:"required,url"`
-	// ApiKey:明文密钥(可选;仅本次请求,服务端加密保存)。
-	ApiKey string `json:"apiKey"`
-	// 七类模型(均可选,由 /models 目录下拉填充):
-	ChatModel       string `json:"chatModel"`
-	VisionModel     string `json:"visionModel"`
-	HearingModel    string `json:"hearingModel"`
-	TTSModel        string `json:"ttsModel"`
-	VoiceCloneModel string `json:"voiceCloneModel"`
-	VideoModel      string `json:"videoModel"`
-	ImageModel      string `json:"imageModel"`
-	// Temperature:采样温度(0~2,缺省 0.8)。
-	Temperature *float64 `json:"temperature"`
+// hListModelConfigs:GET /api-profiles —— 模型配置列表(脱敏:不返回 APIKey)。
+// 逻辑:
+//
+//	① rows := db.Find(ModelConfig{})
+//	② 逐行脱敏视图:APIKey 置空,补 SecretConfigured = (原 APIKey != "")
+//	③ 200 []脱敏视图(后续响应结构统一用 ModelConfigView,见文件尾)
+func hListModelConfigs(c *gin.Context) {
+	// respond(c, 200, rows)
 }
 
-// sanitizeProfile:响应脱敏视图——清空 APIKeyEnc、补 SecretConfigured/MaskedKey。
-// 说明:库中只存密文;掩码选择"解密后即时计算再丢弃"(不落掩码列,避免衍生明文)。
-func sanitizeProfile(p *model.ApiProfile, box *utils.SecretBox) model.ApiProfile {
-	// out := *p; out.APIKeyEnc = ""
-	// if p.APIKeyEnc != "" {
-	//     out.SecretConfigured = true
-	//     if plain, err := box.Decrypt(p.APIKeyEnc); err == nil { out.MaskedKey = &utils.MaskKey(plain) }
-	// }
-	// return out
-	return model.ApiProfile{}
+// ModelConfigCreateReq:创建请求体(与实体同构,但 APIKey 明文仅此出现;能力开关缺省 false)。
+type ModelConfigCreateReq struct {
+	// Name 唯一名(必填)。
+	Name string `json:"name" binding:"required,max=100"`
+	// DisplayName/Description/Version:展示信息。
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	Version     string `json:"version"`
+	// BaseURI/APIType:连接配置(BaseURI 必填)。
+	BaseURI string `json:"baseUri" binding:"required"`
+	APIKey  string `json:"apiKey"`
+	APIType string `json:"apiType"`
+	// 请求参数(缺省取实体默认:0.7/1.0/2048/0/0)。
+	Temperature      *float64 `json:"temperature"`
+	TopP             *float64 `json:"topP"`
+	MaxTokens        *int     `json:"maxTokens"`
+	FrequencyPenalty *float64 `json:"frequencyPenalty"`
+	PresencePenalty  *float64 `json:"presencePenalty"`
+	// 能力开关。
+	TextCompletion     bool `json:"textCompletion"`
+	PhotoGeneration    bool `json:"photoGeneration"`
+	VideoGeneration    bool `json:"videoGeneration"`
+	AudioGeneration    bool `json:"audioGeneration"`
+	TextToSpeech       bool `json:"textToSpeech"`
+	ImageUnderstanding bool `json:"imageUnderstanding"`
+	VideoUnderstanding bool `json:"videoUnderstanding"`
+	AudioUnderstanding bool `json:"audioUnderstanding"`
 }
 
-// hListApiProfiles:GET /api-profiles —— 配置列表(脱敏)。
-func hListApiProfiles(c *gin.Context) {
-	// rows := db.Find(ApiProfile{})
-	// out := make([]model.ApiProfile, 0, len(rows))
-	// for i := range rows { out = append(out, sanitizeProfile(&rows[i], box)) }
-	// respond(c, 200, out)
+// hCreateModelConfig:POST /api-profiles —— 新建(201)。
+// 逻辑:
+//
+//	① bind;APIType 缺省 "openai"
+//	② APIKey 非空 → SecretBox.Encrypt 落 APIKey 字段(密文);空密钥(本地 Ollama)允许
+//	③ 首个配置 → kv 记默认配置 id(角色无绑定时回落)
+//	④ 落库;201 + 脱敏视图
+func hCreateModelConfig(c *gin.Context) {
+	// TODO(实现):见函数注释
 }
 
-// hCreateApiProfile:POST /api-profiles —— 新建(201)。
-func hCreateApiProfile(c *gin.Context) {
-	// var req ApiProfileCreateReq; if !bind(c, &req) { return }
-	// if req.Protocol == "" { req.Protocol = model.ProtoOpenAI }
-	// p := model.ApiProfile{ID: "profile-" + uuid4(), ..., Protocol: req.Protocol}
-	// if req.ApiKey != "" { p.APIKeyEnc = box.Encrypt(req.ApiKey) }      // ② 加密;空密钥(本地 Ollama)允许
-	// if req.Temperature == nil { t := 0.8; p.Temperature = &t }
-	// if db.Count(ApiProfile{}) == 0 { kvSet(KVDefaultProfileID, p.ID) } // ③ 首个=默认
-	// db.Insert(&p)
-	// respond(c, 201, sanitizeProfile(&p, box))
+// hPatchModelConfig:PATCH /api-profiles/:profileId —— 修改(200;未传键保持)。
+// 逻辑:指针字段覆盖;APIKey 指针非空才重加密;落库后返回脱敏视图。
+func hPatchModelConfig(c *gin.Context) {
+	// TODO(实现):见函数注释
 }
 
-// ApiProfileUpdateReq:PATCH /api-profiles/:profileId 请求体(apiKey 缺省=不更新)。
-type ApiProfileUpdateReq struct {
-	Name     *string `json:"name" binding:"omitempty,max=30"`
-	Provider *string `json:"provider"`
-	Region   *string `json:"region"`
-	Protocol *string `json:"protocol" binding:"omitempty,oneof=openai-compatible anthropic ollama"`
-	BaseUrl  *string `json:"baseUrl"`
-	// ApiKey:仅非 nil 且非空时更新(缺省/空串均不动原密钥,契约语义保守处理)。
-	ApiKey          *string  `json:"apiKey"`
-	ChatModel       *string  `json:"chatModel"`
-	VisionModel     *string  `json:"visionModel"`
-	HearingModel    *string  `json:"hearingModel"`
-	TTSModel        *string  `json:"ttsModel"`
-	VoiceCloneModel *string  `json:"voiceCloneModel"`
-	VideoModel      *string  `json:"videoModel"`
-	ImageModel      *string  `json:"imageModel"`
-	Temperature     *float64 `json:"temperature"`
+// hDeleteModelConfig:DELETE /api-profiles/:profileId —— 删除(204;唯一配置受保护)。
+// 逻辑:Count==1 → 409"至少保留一套";删除后解除角色绑定(companion 回退默认);204。
+func hDeleteModelConfig(c *gin.Context) {
+	// TODO(实现):见函数注释
 }
 
-// hPatchApiProfile:PATCH /api-profiles/:profileId —— 修改(200)。
-func hPatchApiProfile(c *gin.Context) {
-	// p := db.Find(ApiProfile{id}); if p == nil { respondErr(404, "配置不存在"); return }
-	// var req ApiProfileUpdateReq; if !bind(c, &req) { return }
-	// if req.Name != nil { p.Name = *req.Name }                          // 指针字段覆盖(未传键不动)
-	// ...同法:provider/region/protocol/baseUrl/七模型/temperature
-	// if req.ApiKey != nil && *req.ApiKey != "" { p.APIKeyEnc = box.Encrypt(*req.ApiKey) }  // 重加密
-	// db.Save(&p)
-	// respond(c, 200, sanitizeProfile(p, box))
+// hTestModelConfig:POST /api-profiles/:profileId/test —— 连通测试(本地后端代理)。
+// 逻辑:解密 key → 按 APIType 走协议探测(openai:GET /models 或 1-token chat)
+// → {status, latencyMs, detail};成功置 enabled 语义(供后续自动路由)。
+func hTestModelConfig(c *gin.Context) {
+	// TODO(实现):见函数注释
 }
 
-// hDeleteApiProfile:DELETE /api-profiles/:profileId —— 删除(204)。
-func hDeleteApiProfile(c *gin.Context) {
-	// p := db.Find(ApiProfile{id}); if p == nil { respondErr(404, "配置不存在"); return }
-	// if db.Count(ApiProfile{}) <= 1 { respondErr(409, CodeConflict, "至少保留一套配置"); return }  // ①
-	// tx {
-	//     db.Delete(&p)
-	//     db.Update(Companion{}, {api_profile_id: NULL}, where: api_profile_id == p.ID)  // ② 解除角色绑定(回落默认)
-	//     if kvGet(KVDefaultProfileID) == p.ID {                          // ③ 默认指针改指任一剩余配置
-	//         any := db.First(ApiProfile{}); kvSet(KVDefaultProfileID, any.ID)
-	//     }
-	// }
-	// respond(c, 204)
+// hListModelConfigModels:GET /api-profiles/:profileId/models —— 拉取该端点可用模型目录。
+// 逻辑:GET {BaseURI}/models(Ollama:/api/tags)→ 映射 ModelInfo 列表(能力按名推断)。
+func hListModelConfigModels(c *gin.Context) {
+	// TODO(实现):见函数注释
 }
 
-// hTestApiProfile:POST /api-profiles/:profileId/test —— 连通测试。
-func hTestApiProfile(c *gin.Context) {
-	// p := db.Find(ApiProfile{id}); if p == nil { respondErr(404, "配置不存在"); return }
-	// secret := ""; if p.APIKeyEnc != "" { secret, _ = box.Decrypt(p.APIKeyEnc) }   // 解密仅进程内
-	// status, latency, detail := ai.NewClient(p, secret).Test()
-	// if status == "success" { p.Enabled = true; db.Save(&p) }
-	// if status == "failed" { respondErr(502, CodeProviderError, detail); return }
-	// respond(c, 200, {status, latencyMs: latency, detail?})              // 失败原因摘要,不泄密钥
+// ModelConfigView:脱敏响应视图(替代实体直接出参;禁止 APIKey 出网)。
+type ModelConfigView struct {
+	model.ModelConfig
+	// SecretConfigured:是否已配置密钥(原 APIKey 非空)。
+	SecretConfigured bool `json:"secretConfigured"`
 }
 
-// hListApiProfileModels:GET /api-profiles/:profileId/models —— 模型目录+能力推断。
-func hListApiProfileModels(c *gin.Context) {
-	// p := db.Find(ApiProfile{id}); if p == nil { respondErr(404, "配置不存在"); return }
-	// secret := ""; if p.APIKeyEnc != "" { secret, _ = box.Decrypt(p.APIKeyEnc) }
-	// models, err := ai.NewClient(p, secret).ListModels()
-	// if err != nil { respondErr(502, CodeProviderError, "服务商不可达"); return }
-	// respond(c, 200, {models})
+// toView:实体 → 脱敏视图(APIKey 置空)。
+func toView(mc model.ModelConfig) ModelConfigView {
+	// has := mc.APIKey != ""
+	// mc.APIKey = ""
+	// return ModelConfigView{ModelConfig: mc, SecretConfigured: has}
+	return ModelConfigView{}
 }
+
+// 注:原 ApiProfile 系 handler(hListApiProfiles/hCreateApiProfile/hPatchApiProfile/
+// hDeleteApiProfile/hTestApiProfile/hListApiProfileModels)已被上述 ModelConfig 系取代,
+// 路由映射名将在 router.go 同步更新(见 router.go 中 /api-profiles 段)。

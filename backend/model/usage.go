@@ -40,8 +40,8 @@ type UsageRecord struct {
 	ConversationID *string `json:"conversationId,omitempty" gorm:"column:conversation_id"`
 	// CompanionID:服务角色(群聊里属于某角色调用)。
 	CompanionID *string `json:"companionId,omitempty" gorm:"column:companion_id"`
-	// APIProfileID:使用的 API 配置(审计与成本对账维度)。
-	APIProfileID string `json:"apiProfileId" gorm:"column:api_profile_id"`
+	// APIProfileID:使用的模型配置(指向 model_configs.ID,审计与对账维度)。
+	APIProfileID uint `json:"apiProfileId" gorm:"column:api_profile_id"`
 	// InputTokens/OutputTokens/CachedTokens:输入/输出/缓存 token(供应商回传;缺失为 0)。
 	InputTokens  int `json:"inputTokens" gorm:"column:input_tokens"`
 	OutputTokens int `json:"outputTokens" gorm:"column:output_tokens"`

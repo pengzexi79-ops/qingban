@@ -93,8 +93,8 @@ type Companion struct {
 	Category string `json:"category"`
 	// Tagline:一句话介绍(≤40,列表副标题)。
 	Tagline string `json:"tagline"`
-	// APIProfileID:绑定的 API 配置 id(为空=回落默认本地配置)。
-	APIProfileID *string `json:"apiProfileId,omitempty" gorm:"column:api_profile_id;index"`
+	// APIProfileID:绑定的模型配置 id(指向 model_configs.ID;为空=回落默认本地配置)。
+	APIProfileID *uint `json:"apiProfileId,omitempty" gorm:"column:api_profile_id;index"`
 	// Persona:角色人设(Tab 分段更新)。
 	Persona Persona `json:"persona" gorm:"type:text;serializer:json"`
 	// MemorySettings:长期记忆设置。

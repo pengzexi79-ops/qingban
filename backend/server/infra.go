@@ -19,7 +19,7 @@ type Health struct {
 	APIVersion string `json:"apiVersion"`
 	// DbOK:数据库探活结果。
 	DbOK bool `json:"dbOk"`
-	// ServerTime:服务器当前时间(RFC3339 UTC)。
+	// ServerTime:本机后端进程当前时间(RFC3339 UTC)。
 	ServerTime string `json:"serverTime"`
 }
 

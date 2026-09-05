@@ -4,8 +4,6 @@ package model
 // 定位(PHASE1 §4 表清单的 kv):迁移状态、引导状态、默认 API 配置 id 等零散键值,
 // 以及可选的持久化幂等/事件序号。键以 k:<域>:<名字> 命名,值统一 JSON 文本。
 
-import "time"
-
 // KV 键常量(集中声明,避免字符串散落导致键冲突)。
 const (
 	// KVBootstrapDone:引导完成标记("1"=已初始化;GET /bootstrap 据此返回 firstRun)。
@@ -22,10 +20,8 @@ const (
 type KV struct {
 	// Key:键名(主键,见上方常量)。
 	Key string `json:"key" gorm:"primaryKey"`
-	// Value:JSON 编码的值(字符串直接存原文;对象存 JSON 文本)。
+	// Value:JSON 编码的值,对象存文本)。
 	Value string `json:"value" gorm:"type:text"`
-	// UpdatedAt:最近写入时间(调试查看)。
-	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // TableName:表名(kvs)。

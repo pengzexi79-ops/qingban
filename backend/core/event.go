@@ -78,28 +78,26 @@ func NewSSEHub() *SSEHub {
 
 // Publish:向全部订阅者广播一个事件(调用点:server 业务消息落库后/轮次推进/设置变更、AI 回调)。
 func (h *SSEHub) Publish(name string, data any) {
-	// 序列化失败(Data 不可 JSON 化)只记日志并丢弃,不 panic 主链路
-	frame, e := encodeFrame(Event{Name: name, Data: data})
-	if e != nil {
-		return
-	}
-
 	h.mu.Lock()
 	h.seq++
-	e = Event{Seq: h.seq, Name: name, Data: data}
-	h.ring = append(h.ring, e)
+	ev := Event{Seq: h.seq, Name: name, Data: data}
+	h.ring = append(h.ring, ev)
 	// 裁剪:只保留最新 hubRetain 条,并同步前移 ringBase
 	if len(h.ring) > hubRetain {
 		h.ring = h.ring[len(h.ring)-hubRetain:]
 		h.ringBase = h.ring[0].Seq
 	}
-	for s := range h.subs {
-		select {
-		case s.ch <- frame:
-		default:
-			// 慢消费者:断开,由客户端 Last-Event-ID 重连补发
-			delete(h.subs, s)
-			close(s.done)
+	// 帧必须携带已分配 seq,故在锁内编码(编码失败只记日志丢弃,不 panic 主链路)
+	frame, encErr := encodeFrame(ev)
+	if encErr == nil {
+		for s := range h.subs {
+			select {
+			case s.ch <- frame:
+			default:
+				// 慢消费者:断开,由客户端 Last-Event-ID 重连补发
+				delete(h.subs, s)
+				close(s.done)
+			}
 		}
 	}
 	h.mu.Unlock()
