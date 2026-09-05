@@ -1,9 +1,12 @@
 package ai
 
-// 群聊轮次调度(第一阶段"同步执行一轮")。
-// 语义(PHASE1_API P3 + BACKEND_HANDOFF §4.2):选人(≤maxSpeakers)→ 逐个调用 → 收尾;
-// 消息逐条广播(round_start/round_message/round_end);防自激:人数上限固定+失败立即收尾;
-// 重复触发受幂等键与冷却时间约束。伪代码草稿:调度细节以函数体内伪代码注释占位。
+// 群聊轮次:手动触发入口(与批次调度引擎联动)。
+// 语义(docs/batch_dispatch_design.md §3):手动触发轮次 POST /groups/{id}/rounds
+// = 调度引擎"点名全员"立即整批投喂(绕过攒批静默窗,仍受冷却约束);被点名消息(消息内 @)
+// 走同一引擎的 FlushConversation(点名子集)。轮次生命周期(rounds 表 + round_* SSE 事件)
+// 由 server 装配层按引擎 hooks(OnRoundStart/OnReply/OnSilent/OnConsumed)维护:
+// 静默成员不记入 speakers。重复触发受幂等键与冷却时间约束。
+// 伪代码草稿:调度细节以函数体内伪代码注释占位。
 
 import (
 	"context"
@@ -14,21 +17,21 @@ import (
 	"qingban/model"
 )
 
-// RoundResult:轮次执行结果(openapi RoundResult)。
+// RoundResult:轮次创建结果(openapi RoundResult;轮次改为异步执行,响应即返回)。
 type RoundResult struct {
 	// RoundID:本轮唯一 id。
 	RoundID string `json:"roundId"`
-	// Status:completed/cancelled。
+	// Status:running(已交棒调度引擎,整批投喂进行中;completed/cancelled 由事件流转)。
 	Status string `json:"status"`
-	// Messages:本轮产生的 AI 消息(completed 时返回)。
+	// Messages:本轮产生的 AI 消息(异步执行,响应时为空;完成后经 round_message 事件逐条推送)。
 	Messages []model.Message `json:"messages,omitempty"`
 	// CancelReason:取消原因(cancelled 非空,如 COOLDOWN_ACTIVE)。
 	CancelReason *string `json:"cancelReason,omitempty"`
 }
 
-// GroupTurnMessage:轮次内"送某位成员的上下文消息"(群聊可见上下文)。
-// 隔离要求:每位 AI 只读 用户提问+群公告+本轮其他成员发言+自己的私聊记忆,
-// 不互相透传私密记忆。
+// GroupTurnMessage:轮次内"送某位成员的上下文消息"(群聊可见上下文)—— 旧版逐轮选人发言的
+// 消息形态,保留作历史参考;批次调度语义下上下文由 dispatch.go 的 BuildBatchLines 按
+// "成员未读水位"拼接(隔离要求不变:每位 AI 只见群内消息+自身短期记忆,不透传私密记忆)。
 type GroupTurnMessage struct {
 	// SenderID:发言者(空串=用户提问)。
 	SenderID string `json:"senderId"`
@@ -38,12 +41,10 @@ type GroupTurnMessage struct {
 
 // GroupRoundArgs:触发一轮入参(server/groups.go 组装)。
 type GroupRoundArgs struct {
-	// Group:群实体(策略来源)。
+	// Group:群实体(策略来源:冷却沿用 strategy.cooldownSeconds)。
 	Group model.Group
-	// Members:群内角色详情(各自 memorySettings/apiProfileId;逐成员独立调用)。
+	// Members:群内角色详情(前置校验用;实际投喂成员与各自配置由调度引擎现读)。
 	Members []model.Companion
-	// UserPrompt:用户本轮提问(可空=由调度成员起话题)。
-	UserPrompt string
 	// ConversationID:消息归属会话(=group.ID)。
 	ConversationID string
 	// Now:当前时刻(注入便于测试冷却)。
@@ -54,47 +55,35 @@ type GroupRoundArgs struct {
 // 桌面本地单进程形态下即终态;若日后出现多进程形态再另行评估。
 var groupLock = newGroupLocks()
 
-// RunGroupRound:同步执行一轮群聊(调用点:POST /groups/{id}/rounds)。
+// RunGroupRound:触发一轮群聊(调用点:POST /groups/{id}/rounds,幂等)。
+// 语义:创建轮次记录后交棒调度引擎 FlushConversation(全员),立即返回 roundId(running)。
+//
+//	---- 前置校验(失败 → cancelled + 对应错误码)----
+//	members := filterEnabled(args.Members)                       // ① 剔除已删/禁用角色
+//	if len(members) < 2 { return cancelled("成员不足") }
+//	last := max(rounds 表 triggered_at, args.Group.LastRoundAt)  // ② 冷却(进程重启后依赖 DB 兜底)
+//	if args.Now.Sub(last) < strategy.cooldownSeconds { return err(CodeCooldownActive) }
+//	lock := groupLock.get(args.Group.ID); lock.Lock()            // ③ 防连点双轮(引擎侧另有 running 防重入)
+//	round := Round{RoundID: "round-" + uuid4(), GroupID: args.Group.ID,
+//	               TriggeredAt: args.Now, Status: running}       // ④ 落 Round(running)
+//	hub.Publish(EventRoundStart, {roundId, groupId, memberIds})  // ⑤
+//
+//	---- 交棒批次调度引擎(见 dispatch.go FlushConversation)----
+//	err := Dispatcher.FlushConversation(ctx, args.ConversationID, nil)   // ⑥ mentions=nil=点名全员
+//	//   引擎逐成员:读各自未读批(成员水位 member_cursors)→ 组上下文(短期记忆+本批)→ 调用;
+//	//   回复产出经 hooks.OnReply:落库 assistant 消息 → round.Speakers 追加 {sp.ID, msg.ID}
+//                               → hub.Publish(round_message + new_message);
+//	//   静默产出经 hooks.OnSilent:不落消息不占 speakers(已读不回,消费水位照常推进);
+//	//   整批结束由装配层 hooks 收尾:round.Status=completed/EndedAt=now、group.LastRoundAt=now
+//	//                                → hub.Publish(round_end {roundId, messages})
+//	//   全员失败路径:round.Status=cancelled + CancelReason(COOLDOWN/成员不足/过程错误)
+//
+//	---- 响应 ----
+//	return &RoundResult{round.RoundID, running, nil, nil}, nil  // ⑦ 立即返回(异步执行)
+//
+// TODO(实现):见函数注释 ①~⑦
 func RunGroupRound(ctx context.Context, args GroupRoundArgs) (*RoundResult, error) {
-	// ---- 前置校验(失败 → cancelled + 对应错误码) ----
-	// members := filterEnabled(args.Members)                       // ① 剔除已删/禁用角色
-	// if len(members) < 2 { return cancelled("成员不足") }
-	// last := max(rounds 表 triggered_at, args.Group.LastRoundAt)  // ② 冷却(进程重启后依赖 DB 兜底)
-	// if args.Now.Sub(last) < strategy.cooldownSeconds { return err(CodeCooldownActive) }
-	// if !userSettings.AutoMessages(手动触发可不查,注释:手动触发豁免用户总开关) { ... }
-	// lock := groupLock.get(args.Group.ID); lock.Lock(); defer lock.Unlock()  // ④ 加群锁(覆盖整个轮次)
-	//
-	// round := Round{RoundID: "round-" + uuid4(), GroupID: args.Group.ID,
-	//                TriggeredAt: args.Now, Status: running}          // 落 Round(running)
-	// hub.Publish(EventRoundStart, {roundId, groupId})               // ⑤
-	//
-	// speakers := SelectSpeakers(members, args.Group.Strategy, randSource())  // ⑥ 选人
-	// prompt := args.UserPrompt
-	// if prompt == "" { prompt = lastUserMessage(args.ConversationID) }   // ★ 补漏:前端先发消息再触发轮次时,
-	//                                                                      //   回读该会话最近一条 role=user 消息作为本轮话题
-	// var msgs []model.Message; failAll := true
-	// for i, sp := range speakers {                                  // ⑦ 逐位串行发言(顺序即发言序)
-	//     seen := [此前已发言消息]                                     //    a) 自己记忆召回(隔离)+
-	//     context := buildMemberContext(args, sp, prompt, seen)      //    b) 用户提问+公告+本轮他人发言(截断)
-	//     result, err := ChatOnce({model: profileOf(sp).ChatModel,    //    c) 独立调用;失败成员跳过不阻断
-	//                              Messages: composeMemberMsgs(...), Temperature})
-	//     if err != nil { log(err); continue }
-	//     msg := Message{ID: message-, ConversationType: group, ConversationId: args.ConversationID,
-	//                    Role: assistant, SenderId: sp.ID, Content: result.Content,
-	//                    ContentType: text, Timestamp: now, UsageID: 落库后回填}   //    d) 落库+广播
-	//     db.Insert(&msg); usageRec 落一行(success)
-	//     hub.Publish(EventRoundMessage, {roundId, message}); hub.Publish(EventNewMessage, {conversationId, msg})
-	//     round.Speakers = append(round.Speakers, {sp.ID, msg.ID}); msgs = append(msgs, msg)
-	//     failAll = false
-	// }
-	// round.Status, round.EndedAt = completed, &now                      // ⑧ 收尾
-	// group.LastRoundAt = &now; db.Save(group); db.Save(round)
-	// hub.Publish(EventRoundEnd, {roundId, messages: msgs})
-	// return &RoundResult{round.RoundID, completed, msgs, nil}, nil
-	//
-	// if failAll { round.Status = cancelled; round.CancelReason = &原因; db.Save(round)   // ⑨ 取消路径
-	//     return &RoundResult{round.RoundID, cancelled, msgs, reason}, nil }
-	return nil, nil // TODO(实现):见函数注释 ①~⑨
+	return nil, nil // TODO(实现):见函数注释 ①~⑦
 }
 
 // SelectSpeakers:按策略选出本轮发言成员(纯函数,单测目标;返回顺序即发言顺序)。
