@@ -95,13 +95,13 @@ func hListModelConfigModels(c *gin.Context) {
 
 // ModelConfigView:脱敏响应视图(替代实体直接出参;禁止 APIKey 出网)。
 type ModelConfigView struct {
-	model.ModelConfig
+	model.APIConfig
 	// SecretConfigured:是否已配置密钥(原 APIKey 非空)。
 	SecretConfigured bool `json:"secretConfigured"`
 }
 
 // toView:实体 → 脱敏视图(APIKey 置空)。
-func toView(mc model.ModelConfig) ModelConfigView {
+func toView(mc model.APIConfig) ModelConfigView {
 	// has := mc.APIKey != ""
 	// mc.APIKey = ""
 	// return ModelConfigView{ModelConfig: mc, SecretConfigured: has}

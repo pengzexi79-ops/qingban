@@ -63,14 +63,14 @@ type ChatResult struct {
 // Client:某条模型配置对应的协议客户端(每次真实调用构建,不常驻避免密钥滞留)。
 type Client struct {
 	// Profile:使用的模型配置行(model_configs;仅调用生命周期内引用)。
-	Profile *model.ModelConfig
+	Profile *model.APIConfig
 	// SecretKey:解密后的明文密钥(用完即弃;空=本地模型无密钥)。
 	SecretKey string
 }
 
 // NewClient:构造协议客户端。
 // secret:服务层用 utils.SecretBox 解密后传入(服务层是唯一持有 SecretBox 的地方)。
-func NewClient(profile *model.ModelConfig, secret string) *Client {
+func NewClient(profile *model.APIConfig, secret string) *Client {
 	return &Client{Profile: profile, SecretKey: secret}
 }
 

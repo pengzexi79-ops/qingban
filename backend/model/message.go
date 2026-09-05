@@ -16,7 +16,7 @@ type File struct {
 	// FileName:原始文件名(展示与下载名)。
 	FileName string `json:"file_name" gorm:"size:255;not null"`
 	// FileType:文件类型(MIME 或扩展名)。
-	FileType string `json:"file_type" gorm:"size:64;not null"`
+	FileType string `json:"file_type" gorm:"size:255;not null"`
 	// Size:文件大小(字节)。
 	Size int64 `json:"size" gorm:"not null"`
 	// Path:存储路径(数据目录下相对路径)。

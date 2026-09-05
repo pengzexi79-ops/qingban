@@ -57,7 +57,7 @@ type BuildArgs struct {
 	// Companion:角色实体(人设/记忆设置/能力/聊天风格)。
 	Companion model.Companion
 	// Profile:绑定模型配置(空=回落默认本地配置)。
-	Profile *model.ModelConfig
+	Profile *model.APIConfig
 	// SecretKey:解密后的 API 密钥(仅构建期取用,不落 runtime 之外)。
 	SecretKey string
 	// UserPersona:用户画像(Instruction 静态段的一部分)。

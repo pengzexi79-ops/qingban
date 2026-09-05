@@ -23,7 +23,7 @@ type ExportData struct {
 	// User:用户资料。
 	User *model.User `json:"user,omitempty"`
 	// ModelConfigs:模型配置(脱敏:APIKey 已置空)。
-	ModelConfigs []model.ModelConfig `json:"modelConfigs,omitempty"`
+	ModelConfigs []model.APIConfig `json:"modelConfigs,omitempty"`
 	// Companions:角色全量(不含派生字段)。
 	Companions []model.Companion `json:"companions,omitempty"`
 	// Groups:群全量(成员关系走 GroupMembers)。

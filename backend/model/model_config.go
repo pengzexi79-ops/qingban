@@ -8,10 +8,10 @@ package model
 
 import "gorm.io/gorm"
 
-// ModelConfig:模型(API)配置行。
-type ModelConfig struct {
+// APIConfig:模型(API)配置行。
+type APIConfig struct {
 	gorm.Model
-	// Name:配置唯一名(角色绑定引用)。
+	// Name:配置唯一API名
 	Name string `gorm:"size:100;uniqueIndex;not null" json:"name"`
 	// DisplayName:显示名(设置页展示)。
 	DisplayName string `gorm:"size:200" json:"display_name"`
@@ -48,5 +48,5 @@ type ModelConfig struct {
 	AudioUnderstanding bool `gorm:"not null;default:false" json:"audio_understanding"`
 
 	// Parent:父配置行(子行委托主行;主行被删时子行脱离,变独立配置)。
-	Parent *ModelConfig `json:"-" gorm:"foreignKey:ParentID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
+	Parent *APIConfig `json:"-" gorm:"foreignKey:ParentID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 }

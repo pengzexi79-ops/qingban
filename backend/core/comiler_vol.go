@@ -28,3 +28,5 @@ var SeverHost = ""
 
 //前端地址
 var AppHost = ""
+
+var Mode = ""

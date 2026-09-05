@@ -1,52 +1,49 @@
-package common
-
-// gin 响应层:统一 JSON 成功/失败出口。
-// 依赖:github.com/gin-gonic/gin(已在 go.mod)。所有 handler 通过本层返回,保证错误体结构一致。
+﻿package common
 
 import (
+	"qingban/core"
+
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
-// ginTraceKey:gin.Context 中存放 traceId 的键名(供响应与日志读取)。
-const ginTraceKey = "traceId"
+// Response 统一响应体:成功 {code:0, data, message:"ok"};错误 {code:-1, message}。
+type Response struct {
+	Code    int         `json:"code"`
+	Data    interface{} `json:"data,omitempty"`
+	Message string      `json:"message"`
+}
 
-// TraceFrom:从请求上下文取 traceId(middleware 注入;无则空串)。
-func TraceFrom(c *gin.Context) string {
-	if v, ok := c.Get(ginTraceKey); ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
+func Success(c *gin.Context, data interface{}) {
+	sendSuccess(c, data)
+}
+
+// sendSuccess debug 模式下记录响应日志后返回 200 统一成功体
+func sendSuccess(c *gin.Context, data interface{}) {
+	if core.Mode == "debug" {
+		logrus.Debug("成功的响应:", data)
 	}
-	return ""
+	c.JSON(200, Response{Code: 0, Data: data, Message: "ok"})
 }
 
-// OK:成功响应(c.JSON)。
-func OK(c *gin.Context, status int, data any) {
-	c.JSON(status, data)
-}
-
-// Fail:统一失败出口:error 归一为 ErrorResponse 输出(不再写第二次响应)。
-func Fail(c *gin.Context, err error) {
-	// appErr := AsAppError(err)                       // ① 归一(未知错误 → INTERNAL)
-	// status := appErr.ToHTTPStatus()                 // ② 错误码 → HTTP 状态映射
-	// core.Log.Error(...)                             // ③ 错误日志(带 traceId/code/底层 err)
-	// c.JSON(status, ErrorResponse{Code, Message,     // ④ 统一错误体
-	//     TraceId: TraceFrom(c), Details})
-	appErr := AsAppError(err)
-	resp := ErrorResponse{
-		Code:    appErr.Code,
-		Message: appErr.Message,
-		TraceId: TraceFrom(c),
-		Details: appErr.Details,
+// Error 返回统一错误响应体(HTTP 状态码由调用方给出)
+func Error(c *gin.Context, code int, message string) {
+	if core.Mode == "debug" {
+		logrus.Debugf("错误响应: %s %s → %d %s", c.Request.Method, c.Request.URL.Path, code, message)
 	}
-	c.JSON(appErr.ToHTTPStatus(), resp)
-	// 注意:handler 返回后必须 return,避免继续写 200 响应(单次请求只允许一个响应)。
+	c.JSON(code, Response{Code: -1, Message: message})
 }
 
-// AbortFail:鉴权/中间件层失败(Abort 掉后续 handler 后统一响应)。
-func AbortFail(c *gin.Context, err error) {
-	c.Abort()
-	Fail(c, err)
+func Unauthorized(c *gin.Context, message string) {
+	if core.Mode == "debug" {
+		logrus.Debugf("未授权: %s %s → 401 %s", c.Request.Method, c.Request.URL.Path, message)
+	}
+	c.JSON(401, Response{Code: -1, Message: message})
 }
 
-// ServerBusy/Page 辅助(无:分页已由各 handler 用 common.Page[T] 直接组装)。
+func Forbidden(c *gin.Context, message string) {
+	if core.Mode == "debug" {
+		logrus.Debugf("禁止访问: %s %s → 403 %s", c.Request.Method, c.Request.URL.Path, message)
+	}
+	c.JSON(403, Response{Code: -1, Message: message})
+}
