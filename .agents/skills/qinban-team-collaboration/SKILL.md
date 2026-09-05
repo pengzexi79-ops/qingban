@@ -46,7 +46,8 @@ description: Coordinate AI-assisted development in the QinBan/亲伴 repository 
 - 修改路径不重叠；
 - API 和数据结构已经冻结，或任务完全不依赖它们；
 - 没有两个人同时修改共享热点文件；
-- 每个任务都知道自己的技术审核人是 `backend-lead`。
+- 每个任务都知道自己的技术审核人是 `backend-lead`；
+- 每名前端同一时间最多保留 1 个进行中的编码任务，避免后端审核队列一次堆满。
 
 当前前端仍集中在 `frontend/index.html`、`frontend/js/app.js`、`frontend/js/store.js`、`frontend/css/style.css`。这些文件实行**技术负责人分配 + 单写者规则**：同一时段每个文件只能由一个任务分支占用。三名前端要稳定并行，应先由 `frontend-core` 按 `backend-lead` 批准的方案，用独立 PR 做无功能变化的模块拆分。不要一边拆架构一边塞新功能。
 
