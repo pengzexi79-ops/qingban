@@ -1,7 +1,7 @@
 const { createApp, nextTick } = Vue;
 
 const ICON_PATHS = {
-  message: '<path d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v4A3.5 3.5 0 0 1-3.5 3.5H12l-4.5 3v-3.2A3.5 3.5 0 0 1 5 10.5z"/><path d="M9 8.5h6M9 11h3"/>',
+  message: '<path d="M5 5.5h14A2.5 2.5 0 0 1 21.5 8v7a2.5 2.5 0 0 1-2.5 2.5H11L5 21v-3.5A2.5 2.5 0 0 1 2.5 15V8A2.5 2.5 0 0 1 5 5.5Z"/><path d="M8 10h8M8 13h5"/>',
   users: '<path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="7.5" r="3.5"/><path d="M16 7.5a3 3 0 0 1 0 5.8M18.5 14.5a3.5 3.5 0 0 1 2.5 3.3V19"/>',
   sparkle: '<path d="m12 3 1.25 4.3L17.5 9l-4.25 1.7L12 15l-1.25-4.3L6.5 9l4.25-1.7z"/><path d="m19 14 .6 2.1L21.5 17l-1.9.9L19 20l-.6-2.1-1.9-.9 1.9-.9zM5 15l.45 1.55L7 17l-1.55.45L5 19l-.45-1.55L3 17l1.55-.45z"/>',
   brain: '<path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.4a3.4 3.4 0 0 0-1.5 6.1A3.5 3.5 0 0 0 8 18h1.5M14.5 4.5A3.5 3.5 0 0 1 18 8v.4a3.4 3.4 0 0 1 1.5 6.1A3.5 3.5 0 0 1 16 18h-1.5M9.5 4.5v13M14.5 4.5v13M9.5 9h5M9.5 13h5"/>',
@@ -68,7 +68,7 @@ const initialState = QinbanStore.getState();
 const app = createApp({
   components: { ChatView },
   data() { return {
-    ...initialState, activeView: 'inbox', previousView: 'inbox', activeChatRef: null, selectedCompanionId: initialState.companions[0]?.id || '', selectedApiId: initialState.apiProfiles[0]?.id || '', aiDetailTab: 'profile', settingsTab: 'api', memoryLabTab: 'records', inboxFilter: 'all', contactFilter: 'all', searchQuery: '', memorySearchQuery: '最近的重要计划', memorySearchResults: [], inputMessage: '', isReplying: false, modelDetecting: false,
+    ...initialState, isBooting: true, activeView: 'inbox', previousView: 'inbox', activeChatRef: null, selectedCompanionId: initialState.companions[0]?.id || '', selectedApiId: initialState.apiProfiles[0]?.id || '', aiDetailTab: 'profile', settingsTab: 'api', memoryLabTab: 'records', inboxFilter: 'all', contactFilter: 'all', searchQuery: '', memorySearchQuery: '最近的重要计划', memorySearchResults: [], inputMessage: '', isReplying: false, modelDetecting: false,
     showGroupDialog: false, showProfileDialog: false, showMemoryDialog: false, showMomentDialog: false, showAbout: false, utilityPanel: '', editingMemory: null, companionForm: {}, groupForm: {}, profileForm: {}, memoryForm: {}, momentForm: {content:'',visibility:'所有好友',imageTone:''}, commentDrafts: {}, toastMessage: '', toastTimer: null, persistTimer: null,
     providerOptions: [
       {name:'OpenAI 兼容',region:'国际/自定义',baseUrl:'https://api.openai.com/v1'}, {name:'DeepSeek',region:'中国大陆',baseUrl:'https://api.deepseek.com'}, {name:'阿里云百炼',region:'中国大陆',baseUrl:''}, {name:'火山方舟',region:'中国大陆',baseUrl:''}, {name:'腾讯混元',region:'中国大陆',baseUrl:''}, {name:'智谱 AI',region:'中国大陆',baseUrl:''}, {name:'Anthropic',region:'国际',baseUrl:''}, {name:'Google AI',region:'国际',baseUrl:''}, {name:'OpenRouter',region:'国际聚合',baseUrl:''}, {name:'Ollama / 本地',region:'本机',baseUrl:'http://localhost:11434/v1'}, {name:'自定义服务商',region:'自定义',baseUrl:''}
@@ -76,10 +76,10 @@ const app = createApp({
     capabilityItems: [
       {key:'hearing',icon:'mic',title:'听觉 / 语音识别',description:'语音转文字、语音消息理解'}, {key:'tts',icon:'bell',title:'语音合成',description:'生成语音条或自动朗读回复'}, {key:'autoRead',icon:'send',title:'自动朗读',description:'回复完成后自动播放语音'}, {key:'voiceClone',icon:'user',title:'声音复刻',description:'绑定后端声音授权与复刻任务'}, {key:'vision',icon:'eye',title:'视觉识图',description:'理解用户发送的图片内容'}, {key:'video',icon:'video',title:'视频理解',description:'上传视频后的理解与问答'}, {key:'imageGeneration',icon:'image',title:'自动生图 / 文生图',description:'按对话或明确指令生成图片'}, {key:'webSearch',icon:'globe',title:'联网搜索',description:'由后端搜索工具获取最新信息'}, {key:'markdown',icon:'code',title:'Markdown',description:'显示列表、代码与强调格式'}, {key:'streaming',icon:'message',title:'流式输出',description:'逐步显示模型返回内容'}, {key:'splitMessages',icon:'more',title:'多条消息拆分',description:'把长回复拆成自然的多条消息'}, {key:'contentFilter',icon:'shield',title:'内容安全过滤',description:'后端审核、危机提示与边界控制'}, {key:'imageConfirm',icon:'check',title:'生图二次确认',description:'执行图片生成前由用户确认'}
     ],
-    navItems: [{id:'inbox',label:'会话',icon:'message'},{id:'contacts',label:'AI 通讯录',icon:'users'},{id:'moments',label:'AI 朋友圈',icon:'moments'},{id:'studio',label:'AI 与群聊',icon:'sparkle'},{id:'memory-lab',label:'记忆数据台',icon:'database'},{id:'mine',label:'我的',icon:'user'}]
+    navItems: [{id:'inbox',label:'会话',icon:'message'},{id:'contacts',label:'通讯录',icon:'users'},{id:'moments',label:'朋友圈',icon:'moments'},{id:'mine',label:'我的',icon:'user'}]
   }; },
   computed: {
-    mobileNavItems() { return this.navItems.filter(item => ['inbox','contacts','moments','studio','mine'].includes(item.id)); },
+    mobileNavItems() { return this.navItems; },
     userInitial() { return (this.settings.nickname || '你').slice(0,1); },
     activeCompanion() { return this.companions.find(item => item.id === this.selectedCompanionId) || this.companions[0] || null; },
     activeApiProfile() { return this.apiProfiles.find(item => item.id === this.selectedApiId) || this.apiProfiles[0] || null; },
@@ -113,8 +113,8 @@ const app = createApp({
     contactCategories() { return ['all','online',...new Set(this.companions.map(item=>item.category))]; },
     proactiveCount() { return this.companions.filter(item=>item.proactive?.enabled).length; },
     enabledCapabilityCount() { return Object.values(this.settings.globalCapabilities||{}).filter(Boolean).length; },
-    viewTitle() { return ({inbox:'会话',chat:this.activeThread?.name||'聊天',contacts:'AI 通讯录',moments:'AI 朋友圈',studio:'AI 与群聊','ai-detail':this.companionForm?.name?`${this.companionForm.name} · 详细设置`:'创建 AI 好友','memory-lab':'长期记忆与数据台',mine:'我的',settings:'设置中心',usage:'API 消耗诊断'})[this.activeView]||'亲伴'; },
-    viewSubtitle() { return ({inbox:'和你的 AI 好友，聊聊正在发生的事。',contacts:'管理 AI 好友、能力标签与关系入口。',moments:'AI 可主动发布动态，也能在本地原型中互动。',studio:'创建角色与 AI 群聊，查看后端待接入项。','memory-lab':'面向后端的数据结构、向量检索与上下文演示。',mine:'个人画像、收藏、协议与项目状态。',settings:'API、模型能力、外观与高级参数统一配置。',usage:'前端估算，不代表真实供应商账单。'})[this.activeView]||''; },
+    viewTitle() { return ({inbox:'会话',chat:this.activeThread?.name||'聊天',contacts:'通讯录',moments:'朋友圈',studio:'AI 与群聊','ai-detail':this.companionForm?.name?`${this.companionForm.name} · 详细设置`:'创建 AI 好友','memory-lab':'长期记忆与数据台',mine:'我的',settings:'设置中心',usage:'API 消耗诊断'})[this.activeView]||'亲伴'; },
+    viewSubtitle() { return ({inbox:'和好友聊聊正在发生的事。',contacts:'找到你的 AI 好友，直接开始聊天。',moments:'看看好友的近况，也分享你的生活。',studio:'创建角色与 AI 群聊，查看后端待接入项。','memory-lab':'面向后端的数据结构、向量检索与上下文演示。',mine:'个人资料、收藏和更多设置。',settings:'API、模型能力、外观与高级参数统一配置。',usage:'前端估算，不代表真实供应商账单。'})[this.activeView]||''; },
     isSecondaryView() { return ['ai-detail','settings','usage'].includes(this.activeView); },
     totalMessages() { return this.companions.reduce((n,i)=>n+(i.messages||[]).length,0)+this.groups.reduce((n,i)=>n+(i.messages||[]).length,0); },
     personaChars() { return this.companions.reduce((n,i)=>n+JSON.stringify(i.persona||{}).length,0); },
@@ -126,7 +126,7 @@ const app = createApp({
     backendContractPreview() { return JSON.stringify({companionId:this.activeCompanion?.id||'companion-id',query:this.memorySearchQuery||'用户当前消息',topK:8,threshold:Number(this.activeCompanion?.memorySettings?.searchThreshold||0.65),include:['episodic_memory','user_preference','relationship_event'],output:{memories:'MemoryHit[]',summary:'string',traceId:'string'}},null,2); }
   },
   watch: { settings:{deep:true,handler(){this.schedulePersist();}}, activeMessages(){this.$nextTick(this.scrollChatToBottom);}, activeView(){this.$nextTick(()=>{const area=document.querySelector('.content-area');if(area)area.scrollTop=0;this.scrollChatToBottom();});} },
-  mounted() { if(!this.activeChatRef&&this.allThreads.length)this.activeChatRef={type:this.allThreads[0].type,id:this.allThreads[0].threadId}; this.$nextTick(this.scrollChatToBottom); },
+  mounted() { if(!this.activeChatRef&&this.allThreads.length)this.activeChatRef={type:this.allThreads[0].type,id:this.allThreads[0].threadId}; window.setTimeout(()=>{this.isBooting=false;},1800); this.$nextTick(this.scrollChatToBottom); },
   methods: {
     icon,
     clone(v){return QinbanStore.clone(v);},

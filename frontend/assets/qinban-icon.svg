@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">亲伴图标</title>
+  <desc id="desc">两个温暖的对话气泡，象征珍藏的记忆与持续的陪伴</desc>
+  <rect width="64" height="64" rx="16" fill="#FFF8EA"/>
+  <path d="M13 16.5c0-4.1 3.4-7.5 7.5-7.5h23c4.1 0 7.5 3.4 7.5 7.5v13c0 4.1-3.4 7.5-7.5 7.5H28.5L18 44.5v-7.9c-2.9-1.1-5-3.9-5-7.1v-13Z" fill="#07C160"/>
+  <path d="M31 39.5h12.5c3.9 0 7 3.1 7 7v2.2c0 3.2-2.2 6-5.2 6.8V61L35 55.5h-4c-3.9 0-7-3.1-7-7v-2c0-3.9 3.1-7 7-7Z" fill="#F2B75B" stroke="#FFF8EA" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="27" cy="23" r="2.2" fill="#FFF8EA"/>
+  <circle cx="36" cy="23" r="2.2" fill="#FFF8EA"/>
+  <path d="M33 49.5c1.8 1.8 5.3 1.8 7.1 0" fill="none" stroke="#FFF8EA" stroke-width="2.2" stroke-linecap="round"/>
+</svg>
