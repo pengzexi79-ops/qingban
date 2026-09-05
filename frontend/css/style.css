@@ -601,7 +601,7 @@ body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; te
 
 /* 会话 */
 .conversation-panel .search-box { margin:0 3px 10px; }
-.conversation-item { position:relative; display:flex; align-items:center; gap:10px; width:100%; padding:10px 8px; border-radius:14px; background:transparent; text-align:left; }.conversation-item:hover { background:#f2f2fa; }.conversation-item.active { background:var(--purple-soft); }.conversation-item .avatar { position:relative; }.online-dot { position:absolute; right:-1px; bottom:0; width:11px; height:11px; border:2px solid var(--surface); border-radius:50%; background:var(--mint); }.group-mark { position:absolute; right:-4px; bottom:-2px; display:grid; place-items:center; width:18px; height:18px; border:2px solid var(--surface); border-radius:7px; color:#fff; background:#5d66ae; font-size:8px; }
+.conversation-item { position:relative; display:flex; align-items:center; gap:10px; width:100%; padding:10px 8px; border-radius:14px; background:transparent; text-align:left; }.conversation-item + .conversation-item { border-top:1px solid rgba(138, 141, 151, .18); border-radius:0; }.conversation-item:hover { background:#f2f2fa; }.conversation-item.active { background:var(--purple-soft); }.conversation-item .avatar { position:relative; }.online-dot { position:absolute; right:-1px; bottom:0; width:11px; height:11px; border:2px solid var(--surface); border-radius:50%; background:var(--mint); }.group-mark { position:absolute; right:-4px; bottom:-2px; display:grid; place-items:center; width:18px; height:18px; border:2px solid var(--surface); border-radius:7px; color:#fff; background:#5d66ae; font-size:8px; }
 .conversation-copy { min-width:0; flex:1; }.conversation-copy>div { display:flex; align-items:center; justify-content:space-between; gap:8px; }.conversation-copy strong { font-size:12px; }.conversation-copy time { color:#9496a6; font-size:9px; }.conversation-copy p { overflow:hidden; margin:5px 0 0; color:var(--muted); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }.unread-dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:var(--coral); }.new-conversation { display:flex; align-items:center; justify-content:center; gap:7px; min-height:38px; margin-top:8px; border:1px dashed #bab5e8; border-radius:12px; color:var(--purple-deep); background:var(--purple-soft); font-size:11px; font-weight:700; }.new-conversation svg { width:14px; height:14px; }
 .chat-panel { min-width:0; height:100%; overflow:hidden; }.chat-route { height:100%; min-height:0; overflow:hidden; }.welcome-panel { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:40px; text-align:center; }.welcome-orb { display:grid; place-items:center; width:78px; height:78px; margin-bottom:18px; border-radius:28px; color:var(--purple); background:var(--purple-soft); }.welcome-orb svg { width:31px; height:31px; }.welcome-panel h2 { margin:12px 0 10px; font-size:27px; line-height:1.35; }.welcome-panel p { max-width:420px; margin:0; color:var(--muted); font-size:12px; line-height:1.8; }
 .chat-messages { scroll-behavior:smooth; }.message-block { margin-bottom:var(--message-gap); }.message-bubble { border-radius:7px var(--bubble-radius) var(--bubble-radius) var(--bubble-radius); font-size:13px; }.message-block.mine .message-bubble { border-radius:var(--bubble-radius) 7px var(--bubble-radius) var(--bubble-radius); }.message-sender { margin:0 0 4px 2px; color:var(--muted); font-size:9px; }.chat-composer textarea { color:var(--ink); }
@@ -909,3 +909,47 @@ body { background: var(--bg); color: var(--ink); font-size: 15px; }
 @media (max-width: 760px) {
   .mine-quick-grid { grid-template-columns: 1fr; }
 }
+
+/* 大屏会话页：参考微信桌面端，让列表和聊天成为连续工作区。 */
+@media (min-width: 761px) {
+  .content-area.inbox-content { padding: 0; overflow: hidden; }
+  .inbox-layout { grid-template-columns: 356px minmax(0, 1fr); gap: 0; }
+  .conversation-panel { border: 0; border-right: 1px solid var(--line); border-radius: 0; box-shadow: none; background: #f7f8fa; }
+  .chat-panel { border-left: 0; border-radius: 0; background: var(--surface); }
+}
+
+@media (max-width: 760px) {
+  .content-area.inbox-content { padding: 13px 12px 16px; overflow-y: auto; }
+}
+
+/* 大屏左侧主导航：收窄为微信式图标选择栏。 */
+@media (min-width: 761px) {
+  :root { --sidebar-width: 76px; }
+  .sidebar { padding: 24px 8px 18px; align-items: stretch; background: #f1f3f5; }
+  .brand-lockup { justify-content: center; padding: 0; }
+  .primary-nav { margin-top: 28px; }
+  .brand-lockup > div:last-child,
+  .sidebar-profile-copy,
+  .sidebar-profile .chevron,
+  .nav-link > span:not(.nav-icon) { display: none; }
+  .sidebar-profile { justify-content: center; padding: 10px 0; margin: 28px 0 20px; border: 0; background: transparent; border-radius: 10px; }
+  .sidebar-profile:hover { background: rgba(255,255,255,.72); transform: none; box-shadow: none; }
+  .primary-nav { gap: 8px; }
+  .nav-link { justify-content: center; min-height: 48px; padding: 0; border-radius: 10px; }
+  .nav-icon { width: 24px; height: 24px; }
+  .nav-icon svg { width: 21px; height: 21px; }
+  .sidebar-footer { padding: 0; }
+  .local-badge { justify-content: center; padding: 10px 0; background: transparent; font-size: 0; }
+  .sidebar-help { justify-content: center; padding: 10px 0; margin: 8px 0 0; font-size: 0; }
+  .sidebar-help span { margin: 0; }
+}
+
+/* 头像保持干净，不在右下角显示在线状态圆点。 */
+.online-dot { display: none !important; }
+
+/* “我的”只保留个人资料、设置和本人朋友圈。 */
+.mine-simple-menu { margin-top: 14px; }
+.mine-simple-menu .menu-row:first-child { border-top: 0; }
+.mine-simple-menu .menu-row { min-height: 72px; }
+.mine-simple-menu .settings-icon { margin-right: 12px; }
+.utility-content .favorite-row small { display: block; margin-top: 7px; color: var(--muted); font-size: 11px; }
