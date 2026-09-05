@@ -1,0 +1,4 @@
+interface:
+  display_name: "亲伴团队协同开发"
+  short_description: "约束总指导、三名前端氛围编程与后端技术负责人的AI协同边界"
+  default_prompt: "使用 $qinban-team-collaboration，先识别我的角色、任务卡、允许路径、接口影响和并行冲突，再开始开发。"
