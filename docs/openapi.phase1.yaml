@@ -1,0 +1,2003 @@
+openapi: 3.0.3
+info:
+  title: 青伴 Phase1 本地 API
+  version: 0.2.0-phase1
+  description: |
+    青伴（亲伴）第一阶段本地后端接口契约。目标形态：本地优先桌面应用
+    （Wails 壳 + Vue 前端 + Go 本地后端 + SQLite 主库）。
+
+    依据 docs/PHASE1_API.md（冻结 v0.1）编写；字段全集出处 docs/BACKEND_HANDOFF.md 与
+    frontend/js/store.js。本文件是全新的第一阶段清单，不替代 docs/openapi.yaml（旧 v0.1 契约）。
+
+    范围约定：
+    - 仅覆盖第一阶段（本地闭环）：基础设施、个人中心、AI 通讯录、会话与单聊消息、
+      群聊、长期记忆、搜索、本地文件、API 配置、用量、数据迁移。
+    - 朋友圈 /moments*、多模态 /capabilities/*、主动消息定时任务、云端加密备份、
+      系统通知 /notify/register 均属后续阶段，本文件不定义。
+    - POST /companions/{companionId}/proactive 已注册为 501 占位。
+    - AI 群聊异步轮次记录（GET /groups/{groupId}/rounds 明细）第一阶段返回空列表。
+
+    通用约定：
+    - Base URL：http://127.0.0.1:8080/api/v1（端口冲突自动顺延；实际地址由 Wails 注入
+      window.__QINBAN_API__，浏览器开发模式可同源访问）。
+    - 鉴权：本地令牌头 X-Local-Token（后端启动时生成）。单用户本地空间，浏览器调试可省略，
+      故本文档不全局强制 security。
+    - ID 全部由本地后端生成（uuid4 短横线格式）。
+    - 分页：游标 before=<lastId> + limit(1~100，默认 20)；分页响应统一
+      { items: [...], nextCursor: string|null }；省略 before 表示最新一页。
+    - 错误统一 ErrorResponse；本阶段错误码见 components.responses 说明。
+    - 发送类接口支持 Idempotency-Key 请求头，同一 key 只执行一次。
+    - 图片/附件引用语法：![图片](fileId) / [文件名](fileId)，先 POST /files 再写入 content；
+      服务端解析 content 后返回 refs[]。消息 content 上限 5000（纯文本 500 不含引用标记）。
+    - 流式：POST .../messages 携带 Accept: text/event-stream 时返回 text/event-stream，
+      事件序列 typing → delta → message（完整助手消息）→ memory_candidates（可能为空数组）→ done；
+      否则同步返回 MessageSendResult。
+    - GET /events 为 SSE 本地事件通道，事件名：new_message / typing / read / presence /
+      memory_candidates / round_start / round_message / round_end / settings_changed。
+      后续阶段事件 proactive_message / moment_published / backup_done 暂不推送。
+
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+    description: 本地后端（Go/Gin，与 Wails 壳同进程或子进程）
+
+tags:
+  - name: Infrastructure
+    description: P0 基础设施：健康、引导、本地事件
+  - name: Profile
+    description: P1 我的资料与设置
+  - name: Companions
+    description: P1/P3 AI 通讯录与角色配置
+  - name: Conversations
+    description: P1 统一会话列表（单聊 + 群聊聚合）
+  - name: Messages
+    description: P2 消息历史与 AI 单聊发送链路
+  - name: Groups
+    description: P3 AI 群聊
+  - name: Memories
+    description: P1/P3 长期记忆与检索
+  - name: Search
+    description: P1/P2 好友、消息、会话搜索
+  - name: Files
+    description: P1 本地文件（头像、聊天图片与附件）
+  - name: ApiProfiles
+    description: P1/P3 API 配置（本地密钥保管）
+  - name: Usage
+    description: P2 用量记录（本地真实统计）
+  - name: Data
+    description: P1 数据导出、导入与清空
+
+paths:
+  # ==================== P0 基础设施 ====================
+  /health:
+    get:
+      tags: [Infrastructure]
+      summary: 健康检查
+      operationId: health
+      responses:
+        '200':
+          description: 服务与数据库状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        default: { $ref: '#/components/responses/Error' }
+  /bootstrap:
+    get:
+      tags: [Infrastructure]
+      summary: 首次引导状态
+      operationId: getBootstrap
+      responses:
+        '200':
+          description: 本地空间是否已初始化
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Bootstrap' }
+        default: { $ref: '#/components/responses/Error' }
+  /bootstrap/init:
+    post:
+      tags: [Infrastructure]
+      summary: 初始化本地数据空间
+      operationId: initBootstrap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BootstrapInitRequest' }
+      responses:
+        '200':
+          description: 初始化完成（可返回迁移统计与默认 API 配置）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BootstrapResult' }
+        '409':
+          description: 本地空间已初始化（二次调用被拒绝）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /events:
+    get:
+      tags: [Infrastructure]
+      summary: 本地实时事件订阅（SSE）
+      operationId: subscribeEvents
+      parameters:
+        - { $ref: '#/components/parameters/LastEventId' }
+      responses:
+        '200':
+          description: text/event-stream。事件名见文件头通用约定；连接建立后先收到一次 snapshot（未读与在线状态）
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: "event: new_message\ndata: {\"conversationId\":\"conv-xxx\",\"message\":{}}\n\n"
+  /refresh:
+    get:
+      tags: [Infrastructure]
+      summary: 会话状态重建（下拉刷新）
+      operationId: refreshState
+      parameters:
+        - { $ref: '#/components/parameters/RefreshInclude' }
+      responses:
+        '200':
+          description: 会话列表状态摘要（未读、置顶、在线、最后消息）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefreshResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # ==================== P1 我的资料与设置 ====================
+  /me:
+    get:
+      tags: [Profile]
+      summary: 获取当前用户资料与设置
+      operationId: getMe
+      responses:
+        '200':
+          description: 当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Profile]
+      summary: 更新当前用户资料或设置
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses:
+        '200':
+          description: 更新后的用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/avatar:
+    post:
+      tags: [Profile]
+      summary: 上传头像
+      operationId: uploadMyAvatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 图片文件，≤10MB
+      responses:
+        '200':
+          description: 头像文件引用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileRef' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/stats:
+    get:
+      tags: [Profile]
+      summary: 个人页统计角标
+      operationId: getMyStats
+      responses:
+        '200':
+          description: 收藏数、记忆条数、AI 角色数等轻量统计
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyStats' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # ==================== P1/P3 AI 通讯录 ====================
+  /companions:
+    get:
+      tags: [Companions]
+      summary: AI 好友列表
+      operationId: listCompanions
+      parameters:
+        - { $ref: '#/components/parameters/Query' }
+        - in: query
+          name: category
+          schema: { type: string }
+          description: 按分类筛选（温柔陪伴/知心朋友/元气搭子/安静倾听/灵感导师 等）
+        - in: query
+          name: hasUnread
+          schema: { type: boolean }
+          description: 仅返回有未读消息的角色
+      responses:
+        '200':
+          description: 角色列表（含未读数与记忆条数，不内嵌消息）
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Companion' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Companions]
+      summary: 创建 AI 好友
+      operationId: createCompanion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanionCreate' }
+      responses:
+        '201':
+          description: 创建成功（未提交的配置取默认值）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Companion' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /companions/{companionId}:
+    parameters:
+      - { $ref: '#/components/parameters/CompanionId' }
+    get:
+      tags: [Companions]
+      summary: AI 好友详情（编辑表单全量字段）
+      operationId: getCompanion
+      responses:
+        '200':
+          description: 角色全量配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Companion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Companions]
+      summary: 更新 AI 好友配置（分段提交）
+      operationId: updateCompanion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanionUpdate' }
+      responses:
+        '200':
+          description: 更新后的角色
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Companion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Companions]
+      summary: 删除 AI 好友（级联会话、消息、记忆，解除文件引用）
+      operationId: deleteCompanion
+      responses:
+        '204': { description: 删除成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /companions/{companionId}/memories:
+    parameters:
+      - { $ref: '#/components/parameters/CompanionId' }
+    get:
+      tags: [Memories]
+      summary: 获取单个 AI 好友的长期记忆（兼容早期契约）
+      operationId: listCompanionMemories
+      parameters:
+        - { $ref: '#/components/parameters/Query' }
+        - { $ref: '#/components/parameters/MemoryTypeQuery' }
+      responses:
+        '200':
+          description: 分页记忆列表，按日期倒序
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryPage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /companions/{companionId}/proactive:
+    parameters:
+      - { $ref: '#/components/parameters/CompanionId' }
+    post:
+      tags: [Companions]
+      summary: 立即请求一条主动消息（本阶段占位）
+      operationId: triggerProactive
+      description: 主动消息定时任务属第二阶段，路由先注册，固定返回 NOT_IMPLEMENTED。
+      responses:
+        '501': { $ref: '#/components/responses/NotImplemented' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================== P1 统一会话列表 ====================
+  /conversations:
+    get:
+      tags: [Conversations]
+      summary: 会话列表（单聊 + 群聊聚合）
+      operationId: listConversations
+      parameters:
+        - in: query
+          name: filter
+          schema: { type: string, enum: [all, unread, companion, group], default: all }
+        - in: query
+          name: q
+          schema: { type: string, maxLength: 100 }
+          description: 匹配会话名称或最后一条消息
+        - { $ref: '#/components/parameters/CursorBefore' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 分页会话列表（置顶在前、按最后消息时间倒序）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThreadPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /conversations/{conversationId}:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    get:
+      tags: [Conversations]
+      summary: 会话摘要（顶栏信息、群成员、公告）
+      operationId: getConversation
+      responses:
+        '200':
+          description: 会话详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThreadDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Conversations]
+      summary: 置顶、免打扰、展示设置
+      operationId: updateConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                pinned: { type: boolean }
+                muted: { type: boolean }
+      responses:
+        '200':
+          description: 更新后的会话
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThreadDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Conversations]
+      summary: 删除会话与历史（本地即删）
+      operationId: deleteConversation
+      responses:
+        '204': { description: 删除成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /conversations/{conversationId}/read:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    post:
+      tags: [Conversations]
+      summary: 标记会话已读
+      operationId: markConversationRead
+      responses:
+        '200':
+          description: 全局未读总数（供角标刷新）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unreadTotal]
+                properties:
+                  unreadTotal: { type: integer, minimum: 0 }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ==================== P2 消息与 AI 单聊 ====================
+  /conversations/{conversationId}/messages:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    get:
+      tags: [Messages]
+      summary: 会话历史（时间升序、向前翻页）
+      operationId: listMessages
+      parameters:
+        - { $ref: '#/components/parameters/CursorBefore' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 分页消息列表（升序返回；nextCursor 指向前一页起点）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagePage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Messages]
+      summary: 发送消息（AI 单聊核心链路）
+      operationId: sendMessage
+      description: |
+        - 携带 Accept: text/event-stream 时返回 SSE（typing→delta→message→memory_candidates→done），
+          消息先落库并经 /events 广播。
+        - 否则同步等待 AI 回复并返回 MessageSendResult（非流式）。
+        - 支持 Idempotency-Key 请求头；模型失败时 assistantMessage.fallback=true 并返回本地兜底文案。
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageCreate' }
+      responses:
+        '201':
+          description: 已创建用户消息（流式模式仅在 SSE 内完成）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageSendResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '502':
+          description: 模型调用失败（PROVIDER_ERROR，可携带 fallback 文案）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Messages]
+      summary: 清空本会话历史
+      operationId: clearMessages
+      parameters:
+        - { $ref: '#/components/parameters/ConfirmQuery' }
+      responses:
+        '204': { description: 清空成功（保留会话本身） }
+        '400': { description: 缺少 confirm=true }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /conversations/{conversationId}/messages/{messageId}:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+      - { $ref: '#/components/parameters/MessageId' }
+    delete:
+      tags: [Messages]
+      summary: 删除单条消息（本地删除并解除文件引用）
+      operationId: deleteMessage
+      responses:
+        '204': { description: 删除成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/FileReferenced' }
+
+  # ==================== P3 群聊 ====================
+  /groups:
+    get:
+      tags: [Groups]
+      summary: 群列表（成员摘要与策略）
+      operationId: listGroups
+      responses:
+        '200':
+          description: 群列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Group' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Groups]
+      summary: 创建 AI 群聊（成员 ≥ 2）
+      operationId: createGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupCreate' }
+      responses:
+        '201':
+          description: 创建成功（自动建立群会话并广播 new_message/群事件）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /groups/{groupId}:
+    parameters:
+      - { $ref: '#/components/parameters/GroupId' }
+    get:
+      tags: [Groups]
+      summary: 群详情
+      operationId: getGroup
+      responses:
+        '200':
+          description: 群信息与成员
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Groups]
+      summary: 改名、头像、公告、策略
+      operationId: updateGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupUpdate' }
+      responses:
+        '200':
+          description: 更新后的群
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Groups]
+      summary: 解散群（消息归档可导出）
+      operationId: deleteGroup
+      responses:
+        '204': { description: 解散成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /groups/{groupId}/members:
+    parameters:
+      - { $ref: '#/components/parameters/GroupId' }
+    post:
+      tags: [Groups]
+      summary: 添加群成员
+      operationId: addGroupMembers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [memberIds]
+              properties:
+                memberIds:
+                  type: array
+                  minItems: 1
+                  items: { type: string }
+                  description: companionId 列表（已在群内者忽略）
+      responses:
+        '200':
+          description: 更新后的群
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /groups/{groupId}/members/{companionId}:
+    parameters:
+      - { $ref: '#/components/parameters/GroupId' }
+      - { $ref: '#/components/parameters/CompanionId' }
+    delete:
+      tags: [Groups]
+      summary: 移出群成员
+      operationId: removeGroupMember
+      description: 少于 2 人时返回 422 VALIDATION_ERROR。
+      responses:
+        '204': { description: 移出成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /groups/{groupId}/rounds:
+    parameters:
+      - { $ref: '#/components/parameters/GroupId' }
+    get:
+      tags: [Groups]
+      summary: 轮次记录（本阶段返回空列表占位）
+      operationId: listGroupRounds
+      responses:
+        '200':
+          description: 分页轮次记录（异步轮次明细第二阶段实现）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoundPage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Groups]
+      summary: 触发一轮群聊
+      operationId: triggerGroupRound
+      description: |
+        第一阶段同步执行一轮：按策略选人（≤maxSpeakers）→ 逐个调用 → 收尾；
+        轮次消息逐条经 /events 广播（round_start/round_message/round_end）。
+        重复触发受 Idempotency-Key 与冷却时间约束。
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '201':
+          description: 轮次已执行完成
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoundResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: 冷却中（COOLDOWN_ACTIVE）或用户总开关关闭（PROACTIVE_DISABLED）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # ==================== P1/P3 长期记忆 ====================
+  /memories:
+    get:
+      tags: [Memories]
+      summary: 记忆数据台列表（全角色）
+      operationId: listMemories
+      parameters:
+        - in: query
+          name: companionId
+          schema: { type: string }
+          description: 按角色过滤（省略为全部角色）
+        - { $ref: '#/components/parameters/Query' }
+        - { $ref: '#/components/parameters/MemoryTypeQuery' }
+        - { $ref: '#/components/parameters/CursorBefore' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 分页记忆列表（含向量索引状态）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryPage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Memories]
+      summary: 手动添加长期记忆
+      operationId: createMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemoryCreate' }
+      responses:
+        '201':
+          description: 创建成功（embeddingStatus=pending，可异步 reindex）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Memory' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /memories/search:
+    post:
+      tags: [Memories]
+      summary: 语义检索长期记忆
+      operationId: searchMemories
+      description: |
+        优先本地向量检索；本地 embedding 模型不可用时自动降级 SQLite FTS5 关键词检索，
+        hits 内 method 标注 keyword。聊天发送链路与记忆数据台调试页共用本接口。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemorySearchRequest' }
+      responses:
+        '200':
+          description: 检索结果（含 traceId 与注入前的压缩摘要）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemorySearchResponse' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503':
+          description: 检索后端不可用（既无向量库也无 FTS 兜底）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+  /memories/{memoryId}:
+    parameters:
+      - { $ref: '#/components/parameters/MemoryId' }
+    patch:
+      tags: [Memories]
+      summary: 编辑记忆或确认候选
+      operationId: updateMemory
+      description: 携带 status=confirmed 表示用户确认自动提取的候选记忆；编辑会触发重新索引。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemoryUpdate' }
+      responses:
+        '200':
+          description: 更新后的记忆
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Memory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Memories]
+      summary: 删除记忆（同步移除向量与索引）
+      operationId: deleteMemory
+      responses:
+        '204': { description: 删除成功，后续对话不得再注入该记忆 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /memories/{memoryId}/reindex:
+    parameters:
+      - { $ref: '#/components/parameters/MemoryId' }
+    post:
+      tags: [Memories]
+      summary: 重建 embedding（pending → indexed）
+      operationId: reindexMemory
+      responses:
+        '200':
+          description: 索引状态更新后的记忆
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Memory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503':
+          description: 本地 embedding 模型不可用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # ==================== 搜索 ====================
+  /search/companions:
+    get:
+      tags: [Search]
+      summary: AI 好友搜索（通讯录搜索框）
+      operationId: searchCompanions
+      parameters:
+        - { $ref: '#/components/parameters/QueryRequired' }
+      responses:
+        '200':
+          description: 命中角色列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Companion' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /search/messages:
+    get:
+      tags: [Search]
+      summary: 跨会话消息搜索
+      operationId: searchMessages
+      description: 匹配纯文本，忽略图片/附件引用标记；命中可回跳（conversationId + messageId 定位）。
+      parameters:
+        - { $ref: '#/components/parameters/QueryRequired' }
+        - in: query
+          name: conversationId
+          schema: { type: string }
+          description: 限定单个会话（省略为全库）
+        - { $ref: '#/components/parameters/CursorBefore' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 分页命中（含片段与回跳位置）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageHitPage' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /search/threads:
+    get:
+      tags: [Search]
+      summary: 会话页顶栏搜索（名称/最后消息）
+      operationId: searchThreads
+      parameters:
+        - { $ref: '#/components/parameters/QueryRequired' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 命中会话列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Thread' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /search/memories:
+    get:
+      tags: [Search]
+      summary: 记忆文本搜索
+      operationId: searchMemoryTexts
+      parameters:
+        - { $ref: '#/components/parameters/QueryRequired' }
+        - { $ref: '#/components/parameters/MemoryTypeQuery' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 命中记忆列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryPage' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # ==================== P1 本地文件 ====================
+  /files:
+    post:
+      tags: [Files]
+      summary: 上传文件（图片/附件/头像）
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                kind:
+                  type: string
+                  enum: [image, file, voice, video]
+                  default: image
+                scope:
+                  type: string
+                  enum: [message, moment, avatar]
+                  default: message
+                conversationId:
+                  type: string
+                  description: 发送场景下的目标会话（供清理孤儿文件时引用）
+      responses:
+        '201':
+          description: 文件引用（图片服务端生成缩略图）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileRef' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /files/{fileId}:
+    parameters:
+      - { $ref: '#/components/parameters/FileId' }
+    get:
+      tags: [Files]
+      summary: 读取/下载文件
+      operationId: getFile
+      parameters:
+        - in: query
+          name: thumbnail
+          schema: { type: boolean }
+          description: 图片类资源取缩略图
+      responses:
+        '200':
+          description: 文件二进制（Content-Type 按存储 mimeType）
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Files]
+      summary: 物理删除文件
+      operationId: deleteFile
+      responses:
+        '204': { description: 删除成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/FileReferenced' }
+  /files/purge-orphans:
+    post:
+      tags: [Files]
+      summary: 清理无引用孤儿文件（数据页/调试）
+      operationId: purgeOrphanFiles
+      responses:
+        '200':
+          description: 已清理数量
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted: { type: integer, minimum: 0 }
+
+  # ==================== P3 API 配置 ====================
+  /api-profiles:
+    get:
+      tags: [ApiProfiles]
+      summary: API 配置列表（脱敏）
+      operationId: listApiProfiles
+      responses:
+        '200':
+          description: 列表（apiKey 永不返回明文）
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiProfile' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [ApiProfiles]
+      summary: 新建 API 配置
+      operationId: createApiProfile
+      description: apiKey 由本地后端加密存储（系统钥匙串/加密文件），只在本地进程内使用。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiProfileCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiProfile' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+  /api-profiles/{profileId}:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    patch:
+      tags: [ApiProfiles]
+      summary: 修改 API 配置
+      operationId: updateApiProfile
+      description: apiKey 缺省表示不更新密钥。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiProfileUpdate' }
+      responses:
+        '200':
+          description: 更新后的配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiProfile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [ApiProfiles]
+      summary: 删除 API 配置
+      operationId: deleteApiProfile
+      description: 至少保留一套；删除后自动解除绑定角色的引用（回退到默认配置）。
+      responses:
+        '204': { description: 删除成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: 仅剩一套配置，拒绝删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+  /api-profiles/{profileId}/test:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    post:
+      tags: [ApiProfiles]
+      summary: 连通性测试
+      operationId: testApiProfile
+      responses:
+        '200':
+          description: 测试结果（由本地后端代理发起，浏览器不直连）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiProfileTestResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502':
+          description: 服务商不可达（PROVIDER_ERROR）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+  /api-profiles/{profileId}/models:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    get:
+      tags: [ApiProfiles]
+      summary: 读取模型列表并推断能力
+      operationId: listApiProfileModels
+      description: 兼容 Ollama /api/tags 与 OpenAI 兼容 /models，由本地后端代理。
+      responses:
+        '200':
+          description: 模型目录（含能力推断，供前端模型选择）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModelInfo' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/ProviderError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # ==================== P2 用量 ====================
+  /usage/summary:
+    get:
+      tags: [Usage]
+      summary: 用量汇总
+      operationId: getUsageSummary
+      parameters:
+        - { $ref: '#/components/parameters/DateFrom' }
+        - { $ref: '#/components/parameters/DateTo' }
+      responses:
+        '200':
+          description: Token 与费用（如有）按能力/角色分项
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /usage/records:
+    get:
+      tags: [Usage]
+      summary: 用量明细
+      operationId: listUsageRecords
+      parameters:
+        - in: query
+          name: model
+          schema: { type: string }
+        - in: query
+          name: capability
+          schema: { type: string }
+        - { $ref: '#/components/parameters/CursorBefore' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: 分页用量明细
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageRecordPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /usage/trend:
+    get:
+      tags: [Usage]
+      summary: 每日用量趋势（替换页面占位图）
+      operationId: getUsageTrend
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+      responses:
+        '200':
+          description: 按天聚合趋势
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [points]
+                properties:
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      required: [date, inputTokens, outputTokens, estimatedCost]
+                      properties:
+                        date: { type: string, format: date }
+                        inputTokens: { type: integer }
+                        outputTokens: { type: integer }
+                        estimatedCost: { type: number, example: 0.012 }
+
+  # ==================== P1 数据迁移 ====================
+  /data/export:
+    get:
+      tags: [Data]
+      summary: 全量导出（本地 JSON 备份）
+      operationId: exportData
+      description: |
+        dataVersion=qingban_api_v1；apiProfiles 脱敏；图片/附件为 fileId 引用。
+        完整备份请使用后续阶段的本地整目录快照或云端加密备份。
+      responses:
+        '200':
+          description: 全量导出 JSON
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportData' }
+        default: { $ref: '#/components/responses/Error' }
+  /data/import:
+    post:
+      tags: [Data]
+      summary: 导入数据
+      operationId: importData
+      description: |
+        兼容本格式（qingban_api_v1）与前端演示导出（qinban_frontend_v4/v3/v2，localStorage 键）。
+        校验版本与归属；返回迁移统计。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload:
+                  type: object
+                  description: 导出 JSON 原文（演示导出与 API 导出同入口）
+      responses:
+        '200':
+          description: 迁移统计（幂等：已存在记录按 id 去重跳过）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportResult' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '409':
+          description: 目标空间已有数据且未提供合并确认
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default: { $ref: '#/components/responses/Error' }
+  /data:
+    delete:
+      tags: [Data]
+      summary: 清空本地业务数据（不可恢复）
+      operationId: clearAllData
+      parameters:
+        - { $ref: '#/components/parameters/ConfirmQuery' }
+      responses:
+        '204': { description: 清空成功 }
+        '400': { description: 缺少 confirm=true }
+
+components:
+  parameters:
+    CompanionId:
+      in: path
+      name: companionId
+      required: true
+      schema: { type: string, minLength: 1 }
+    ConversationId:
+      in: path
+      name: conversationId
+      required: true
+      schema: { type: string, minLength: 1 }
+      description: 单聊用 companionId、群聊用 groupId，二者共用同一命名空间（后端统一生成）
+    GroupId:
+      in: path
+      name: groupId
+      required: true
+      schema: { type: string, minLength: 1 }
+    MemoryId:
+      in: path
+      name: memoryId
+      required: true
+      schema: { type: string, minLength: 1 }
+    MessageId:
+      in: path
+      name: messageId
+      required: true
+      schema: { type: string, minLength: 1 }
+    FileId:
+      in: path
+      name: fileId
+      required: true
+      schema: { type: string, minLength: 1 }
+    ProfileId:
+      in: path
+      name: profileId
+      required: true
+      schema: { type: string, minLength: 1 }
+    Query:
+      in: query
+      name: q
+      schema: { type: string, maxLength: 100 }
+      description: 名称/消息/记忆文本关键词
+    QueryRequired:
+      in: query
+      name: q
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    MemoryTypeQuery:
+      in: query
+      name: type
+      schema: { $ref: '#/components/schemas/MemoryType' }
+    CursorBefore:
+      in: query
+      name: before
+      schema: { type: string }
+      description: 分页游标（上一页最后一条记录 id）；省略表示最新一页
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    ConfirmQuery:
+      in: query
+      name: confirm
+      required: true
+      schema: { type: boolean, enum: [true] }
+      description: 必须显式 confirm=true
+    LastEventId:
+      in: header
+      name: Last-Event-ID
+      schema: { type: string }
+      description: SSE 断线重连的最近事件 id（本地事件带递增 id）
+    RefreshInclude:
+      in: query
+      name: include
+      schema: { type: string, enum: [threads, presence], default: threads }
+      description: 逗号分隔：threads=会话列表摘要，presence=在线状态
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      schema: { type: string, maxLength: 128 }
+      description: 同一 key 只执行一次（发送/触发轮次/导入）
+    DateFrom:
+      in: query
+      name: from
+      schema: { type: string, format: date }
+    DateTo:
+      in: query
+      name: to
+      schema: { type: string, format: date }
+  responses:
+    NotFound:
+      description: 资源不存在或不属于当前本地空间（code=NOT_FOUND）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationError:
+      description: 请求参数校验失败（code=VALIDATION_ERROR）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    FileReferenced:
+      description: 文件仍被引用（code=FILE_REFERENCED，details.refCount）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ProviderError:
+      description: 服务商不可达（code=PROVIDER_ERROR）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotImplemented:
+      description: 本阶段未实现（code=NOT_IMPLEMENTED）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Error:
+      description: 请求失败（code 见 ErrorResponse）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: NOT_FOUND / VALIDATION_ERROR / RATE_LIMITED / PROACTIVE_DISABLED / COOLDOWN_ACTIVE / PROVIDER_ERROR / FILE_REFERENCED / NOT_IMPLEMENTED 等
+        message: { type: string }
+        traceId: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+
+    # ---------- P0 ----------
+    Health:
+      type: object
+      required: [status, apiVersion, dbOk, serverTime]
+      properties:
+        status: { type: string, enum: [ok, degraded], example: ok }
+        apiVersion: { type: string, example: '0.2.0-phase1' }
+        dbOk: { type: boolean }
+        serverTime: { type: string, format: date-time }
+    Bootstrap:
+      type: object
+      required: [firstRun]
+      properties:
+        firstRun: { type: boolean, description: true 时前端显示首次引导（初始化/导入演示数据） }
+        userId: { type: string, nullable: true }
+        dataVersion: { type: string, nullable: true, example: qingban_api_v1 }
+        counts:
+          type: object
+          nullable: true
+          properties:
+            companions: { type: integer }
+            messages: { type: integer }
+            memories: { type: integer }
+    BootstrapInitRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [empty, import-demo]
+          description: empty=空白空间（种子 Ollama 默认 API 配置）；import-demo=同时迁移前端演示数据
+        importPayload:
+          type: object
+          description: mode=import-demo 时携带演示导出 JSON（兼容 qinban_frontend_v4 等）
+    BootstrapResult:
+      type: object
+      required: [userId, dataVersion]
+      properties:
+        userId: { type: string }
+        dataVersion: { type: string }
+        importStats: { $ref: '#/components/schemas/ImportResult' }
+        defaultApiProfileId: { type: string }
+    RefreshResult:
+      type: object
+      required: [unreadTotal]
+      properties:
+        unreadTotal: { type: integer }
+        threads:
+          type: array
+          items: { $ref: '#/components/schemas/Thread' }
+          description: include=threads 时返回（含最后消息摘要）
+        presence:
+          type: array
+          items: { type: string }
+          description: include=presence 时返回在线 companionId 列表
+
+    # ---------- 我的 ----------
+    UserProfile:
+      type: object
+      required: [id, nickname, signature, settings]
+      properties:
+        id: { type: string }
+        nickname: { type: string, maxLength: 16, example: 林林 }
+        signature: { type: string, maxLength: 50, example: 把日子过成被记住的样子 }
+        userPersona: { type: string, maxLength: 2000, description: 用户希望如何被理解和回应 }
+        avatarFileId: { type: string, nullable: true }
+        avatarImage: { type: string, nullable: true, description: 导入兼容字段（base64，仅迁移期使用） }
+        settings: { $ref: '#/components/schemas/UserSettings' }
+    UserSettings:
+      type: object
+      properties:
+        autoMessages: { type: boolean, default: true }
+        notifications: { type: boolean, default: true }
+        quietHours: { type: boolean, default: true }
+        quietStart: { type: string, example: '23:00' }
+        quietEnd: { type: string, example: '08:00' }
+        globalCapabilities: { $ref: '#/components/schemas/Capabilities' }
+        momentAutoPost: { type: boolean, description: 朋友圈相关，字段先随导入兼容保存 }
+        momentFrequency: { type: string }
+        advanced:
+          type: object
+          properties:
+            contextTurns: { type: integer, example: 20 }
+            summaryMode: { type: string, enum: [hybrid, rolling, session], example: hybrid }
+            memoryThreshold: { type: number, example: 0.65 }
+        backup:
+          type: object
+          description: 云端备份设置（第三阶段生效，字段随导入兼容保存）
+          properties:
+            enabled: { type: boolean, default: false }
+            intervalHours: { type: integer, default: 24 }
+            lastBackupAt: { type: string, format: date-time, nullable: true }
+        theme: { type: string, enum: [light, dark], description: 前端展示项，后端仅透传保存 }
+        fontSize: { type: string, enum: [compact, comfortable, large] }
+        bubbleRadius: { type: integer }
+        messageGap: { type: integer }
+    UserUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        nickname: { type: string, maxLength: 16 }
+        signature: { type: string, maxLength: 50 }
+        userPersona: { type: string, maxLength: 2000 }
+        settings:
+          type: object
+          description: 传入的 settings 子对象做深合并，未传键保持不变
+    MyStats:
+      type: object
+      required: [companionCount, memoryCount, favoriteCount, todayMessages]
+      properties:
+        companionCount: { type: integer }
+        memoryCount: { type: integer }
+        favoriteCount: { type: integer }
+        todayMessages: { type: integer }
+
+    # ---------- 能力开关（角色与用户共用） ----------
+    Capabilities:
+      type: object
+      properties:
+        hearing: { type: boolean, default: false }
+        tts: { type: boolean, default: false }
+        voiceClone: { type: boolean, default: false }
+        vision: { type: boolean, default: false }
+        video: { type: boolean, default: false }
+        imageGeneration: { type: boolean, default: false }
+        webSearch: { type: boolean, default: false }
+      description: 开关是否真实生效取决于后端模型接入；本阶段仅持久化并广播 settings_changed
+
+    # ---------- AI 通讯录 ----------
+    Persona:
+      type: object
+      properties:
+        identity: { type: string, maxLength: 500, description: 角色身份 }
+        relationship: { type: string, maxLength: 200, description: 与用户的关系 }
+        personality: { type: string, maxLength: 2000, description: 性格描述 }
+        speakingStyle: { type: string, maxLength: 1000, description: 表达风格 }
+        boundaries: { type: string, maxLength: 1000, description: 关系与安全边界 }
+        forbiddenTopics: { type: string, maxLength: 1000, description: 禁用内容与行为 }
+    MemorySettings:
+      type: object
+      properties:
+        enabled: { type: boolean, default: true }
+        mode: { type: string, enum: [hybrid, curated, automatic], default: hybrid }
+        summaryMode: { type: string, enum: [rolling, session, manual], default: rolling }
+        timeRangeDays: { type: integer, default: 365 }
+        searchThreshold: { type: number, default: 0.65, description: 向量相似度阈值 }
+        maxItems: { type: integer, default: 12, description: 每次最多载入条数 }
+    ChatStyle:
+      type: object
+      properties:
+        markdown: { type: boolean, default: true }
+        streaming: { type: boolean, default: true }
+        typing: { type: boolean, default: true, description: 回复前显示输入状态 }
+        splitMessages: { type: boolean, default: true }
+        replyDelay: { type: integer, default: 650, description: 前端渲染延迟 ms }
+        bubbleStyle: { type: string, enum: [soft, standard], default: soft }
+    ProactiveConfig:
+      type: object
+      description: 主动消息规则。定时任务属第二阶段；字段随角色配置一并持久化
+      properties:
+        enabled: { type: boolean, default: true }
+        start: { type: string, example: '09:00' }
+        end: { type: string, example: '22:30' }
+        frequency: { type: string, enum: [light, balanced, daily, off], default: balanced }
+        minMinutes: { type: integer, default: 45 }
+        maxMinutes: { type: integer, default: 240 }
+        dailyLimit: { type: integer, default: 4 }
+        avoidBusyTime: { type: boolean, default: true }
+    Companion:
+      type: object
+      required: [id, name, category, persona]
+      properties:
+        id: { type: string, example: companion-mumu }
+        name: { type: string, maxLength: 12, example: 沐沐 }
+        initial: { type: string, maxLength: 1, example: 沐 }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', example: '#776ee8' }
+        avatarFileId: { type: string, nullable: true }
+        avatarImage: { type: string, nullable: true, description: base64 兼容迁移字段 }
+        category: { type: string, example: 温柔陪伴 }
+        tagline: { type: string, maxLength: 40 }
+        apiProfileId: { type: string, nullable: true }
+        persona: { $ref: '#/components/schemas/Persona' }
+        memorySettings: { $ref: '#/components/schemas/MemorySettings' }
+        chatStyle: { $ref: '#/components/schemas/ChatStyle' }
+        proactive: { $ref: '#/components/schemas/ProactiveConfig' }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+        memoryCount: { type: integer, description: 列表展示的记忆条数（服务端统计，非内嵌数组） }
+        unread: { type: integer, description: 未读消息数 }
+        pinned: { type: boolean, default: false }
+        online: { type: boolean, default: true, description: 本地形态恒为可用状态占位 }
+        createdAt: { type: string, format: date-time }
+    CompanionCreate:
+      type: object
+      required: [name]
+      description: 支持快速创建：仅 name（+可选 persona.relationship）；其余配置取默认值
+      properties:
+        name: { type: string, maxLength: 12 }
+        initial: { type: string, maxLength: 1 }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        avatarFileId: { type: string }
+        category: { type: string }
+        tagline: { type: string, maxLength: 40 }
+        apiProfileId: { type: string }
+        persona: { $ref: '#/components/schemas/Persona' }
+        memorySettings: { $ref: '#/components/schemas/MemorySettings' }
+        chatStyle: { $ref: '#/components/schemas/ChatStyle' }
+        proactive: { $ref: '#/components/schemas/ProactiveConfig' }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+    CompanionUpdate:
+      type: object
+      minProperties: 1
+      description: 前端各配置 tab 分段提交，未传键保持不变
+      properties:
+        name: { type: string, maxLength: 12 }
+        initial: { type: string, maxLength: 1 }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        avatarFileId: { type: string }
+        category: { type: string }
+        tagline: { type: string, maxLength: 40 }
+        apiProfileId: { type: string }
+        persona: { $ref: '#/components/schemas/Persona' }
+        memorySettings: { $ref: '#/components/schemas/MemorySettings' }
+        chatStyle: { $ref: '#/components/schemas/ChatStyle' }
+        proactive: { $ref: '#/components/schemas/ProactiveConfig' }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+
+    # ---------- 会话 ----------
+    Thread:
+      type: object
+      required: [type, id, name]
+      properties:
+        type: { type: string, enum: [companion, group] }
+        id: { type: string, description: 单聊为 companionId，群聊为 groupId（即 conversationId） }
+        name: { type: string }
+        avatarFileId: { type: string, nullable: true }
+        color: { type: string }
+        initial: { type: string }
+        unread: { type: integer }
+        pinned: { type: boolean }
+        muted: { type: boolean }
+        online: { type: boolean, description: 单聊展示 }
+        memberCount: { type: integer, description: 群聊展示 }
+        lastMessage:
+          type: object
+          nullable: true
+          properties:
+            content: { type: string, description: 摘要（截断）；群聊含发送者名前缀 } 
+            timestamp: { type: string, format: date-time }
+            senderName: { type: string, nullable: true }
+        lastTimestamp: { type: string, format: date-time }
+    ThreadDetail:
+      allOf:
+        - { $ref: '#/components/schemas/Thread' }
+        - type: object
+          properties:
+            announcement: { type: string, nullable: true, description: 群公告 }
+            memberIds:
+              type: array
+              items: { type: string }
+              description: 群聊成员；单聊为 [companionId]
+    ThreadPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Thread' }
+        nextCursor: { type: string, nullable: true }
+
+    # ---------- 消息 ----------
+    MessageRef:
+      type: object
+      required: [kind, fileId]
+      properties:
+        kind: { type: string, enum: [image, file] }
+        fileId: { type: string }
+        fileName: { type: string }
+        mimeType: { type: string, example: image/jpeg }
+        size: { type: integer }
+        width: { type: integer }
+        height: { type: integer }
+        thumbnailFileId: { type: string, description: 图片缩略图（可选） }
+    Message:
+      type: object
+      required: [id, conversationType, conversationId, role, content, timestamp]
+      properties:
+        id: { type: string }
+        conversationType: { type: string, enum: [companion, group] }
+        conversationId: { type: string }
+        role: { type: string, enum: [user, assistant] }
+        senderId: { type: string, description: 单聊为 companionId；群聊必填（AI 消息=发言角色） }
+        content: { type: string, maxLength: 5000, description: "文本（可含 ![图片](fileId) / [文件名](fileId) 引用标记）" }
+        contentType:
+          type: string
+          enum: [text, image, file, voice, video, mixed]
+          default: text
+        refs:
+          type: array
+          items: { $ref: '#/components/schemas/MessageRef' }
+          description: 服务端解析引用标记后返回的资源数组（与 content 幂等可重建）
+        timestamp: { type: string, format: date-time }
+        proactive: { type: boolean, default: false }
+        streamed: { type: boolean, default: false }
+        fallback: { type: boolean, default: false, description: 模型失败时的本地兜底回复 }
+        usageId: { type: string, nullable: true, description: 关联的用量记录 }
+    MessageCreate:
+      type: object
+      description: 纯图片/纯文件消息允许 content 为空（图片 ≤9 张、附件 ≤20 个，经 refs 校验归属）
+      properties:
+        content: { type: string, minLength: 1, maxLength: 500, description: 用户输入上限 500 字（不含引用标记） }
+        contentType: { type: string, enum: [text, image, file, voice, video, mixed], default: text }
+      required: [contentType]
+    MessageSendResult:
+      type: object
+      required: [userMessage, assistantMessage, memoryCandidates]
+      properties:
+        userMessage: { $ref: '#/components/schemas/Message' }
+        assistantMessage: { $ref: '#/components/schemas/Message' }
+        memoryCandidates:
+          type: array
+          description: 待用户确认的记忆候选（空数组表示本次无候选）；流式模式下由 SSE memory_candidates 事件承载
+          items: { $ref: '#/components/schemas/Memory' }
+    MessagePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        nextCursor: { type: string, nullable: true }
+    MessageHit:
+      type: object
+      required: [messageId, conversationType, conversationId, content, timestamp]
+      properties:
+        messageId: { type: string }
+        conversationType: { type: string, enum: [companion, group] }
+        conversationId: { type: string }
+        conversationName: { type: string, description: 供搜索结果回显会话名 }
+        senderName: { type: string, nullable: true }
+        content: { type: string, description: 命中片段 }
+        timestamp: { type: string, format: date-time }
+    MessageHitPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MessageHit' }
+        nextCursor: { type: string, nullable: true }
+
+    # ---------- 群聊 ----------
+    GroupStrategy:
+      type: object
+      properties:
+        enabled: { type: boolean, default: true, description: 允许主动开一轮话题（任务阶段生效） }
+        mode: { type: string, enum: [random, turn], default: random }
+        cooldownSeconds: { type: integer, minimum: 0, default: 30, description: 两次轮次最小间隔 }
+        maxSpeakers: { type: integer, minimum: 1, default: 2, description: 每轮最多发言成员数 }
+        order: { type: string, enum: [balanced, member-order], default: member-order }
+    Group:
+      type: object
+      required: [id, name, memberIds, strategy]
+      properties:
+        id: { type: string }
+        name: { type: string, maxLength: 20 }
+        avatarFileId: { type: string, nullable: true }
+        color: { type: string }
+        initial: { type: string }
+        announcement: { type: string, maxLength: 500, nullable: true }
+        memberIds:
+          type: array
+          minItems: 2
+          items: { type: string }
+        memberSummaries:
+          type: array
+          description: 列表接口附带：成员姓名/头像缩略（可选）
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              color: { type: string }
+              initial: { type: string }
+              avatarFileId: { type: string, nullable: true }
+        strategy: { $ref: '#/components/schemas/GroupStrategy' }
+        createdAt: { type: string, format: date-time }
+    GroupCreate:
+      type: object
+      required: [name, memberIds, strategy]
+      properties:
+        name: { type: string, maxLength: 20 }
+        avatarFileId: { type: string }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        announcement: { type: string, maxLength: 500 }
+        memberIds:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: { type: string }
+          description: 从通讯录选择的 companionId 列表
+        strategy: { $ref: '#/components/schemas/GroupStrategy' }
+    GroupUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, maxLength: 20 }
+        avatarFileId: { type: string }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        announcement: { type: string, maxLength: 500 }
+        strategy: { $ref: '#/components/schemas/GroupStrategy' }
+    RoundResult:
+      type: object
+      required: [roundId, status]
+      properties:
+        roundId: { type: string }
+        status: { type: string, enum: [completed, cancelled] }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+          description: 本轮产生的 AI 消息（已完成时返回）
+        cancelReason: { type: string, nullable: true }
+    Round:
+      type: object
+      required: [roundId, groupId, triggeredAt]
+      properties:
+        roundId: { type: string }
+        groupId: { type: string }
+        triggeredAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [running, completed, cancelled] }
+        speakers:
+          type: array
+          items:
+            type: object
+            properties:
+              companionId: { type: string }
+              messageId: { type: string }
+    RoundPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Round' }
+        nextCursor: { type: string, nullable: true }
+
+    # ---------- 长期记忆 ----------
+    MemoryType:
+      type: string
+      enum: [preference, event, relationship, summary]
+    Memory:
+      type: object
+      required: [id, type, title, content, date, source]
+      properties:
+        id: { type: string }
+        companionId: { type: string, nullable: true, description: 归属角色；全局记忆（用户偏好）可空 }
+        type: { $ref: '#/components/schemas/MemoryType' }
+        title: { type: string, maxLength: 28 }
+        content: { type: string, maxLength: 5000 }
+        date: { type: string, format: date, example: '2026-09-02' }
+        source: { type: string, maxLength: 50, description: 来源（如：你告诉我的 / 自动提取） }
+        importance: { type: number, default: 0.5, description: 0~1 重要度 }
+        status: { type: string, enum: [candidate, confirmed], default: confirmed, description: candidate=自动提取待用户确认 }
+        embeddingStatus: { type: string, enum: [pending, indexed, failed], default: pending }
+        sourceMessageId: { type: string, nullable: true, description: 提取来源消息 }
+        createdAt: { type: string, format: date-time }
+    MemoryCreate:
+      type: object
+      required: [type, title, content]
+      properties:
+        companionId: { type: string, description: 归属角色；省略=全局记忆 }
+        type: { $ref: '#/components/schemas/MemoryType' }
+        title: { type: string, maxLength: 28 }
+        content: { type: string, maxLength: 5000 }
+        date: { type: string, format: date }
+        source: { type: string, maxLength: 50, default: 手动添加 }
+        importance: { type: number, default: 0.5 }
+    MemoryUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        type: { $ref: '#/components/schemas/MemoryType' }
+        title: { type: string, maxLength: 28 }
+        content: { type: string, maxLength: 5000 }
+        date: { type: string, format: date }
+        source: { type: string, maxLength: 50 }
+        importance: { type: number }
+        status: { type: string, enum: [confirmed], description: 确认候选记忆 }
+    MemorySearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1, maxLength: 500 }
+        companionId: { type: string, description: 限定角色（可选） }
+        topK: { type: integer, minimum: 1, maximum: 50, default: 8 }
+        threshold: { type: number, minimum: 0, maximum: 1, default: 0.65 }
+        include:
+          type: array
+          items: { $ref: '#/components/schemas/MemoryType' }
+          description: 限定记忆类型（省略=全部）
+    MemorySearchResponse:
+      type: object
+      required: [traceId, query, hits]
+      properties:
+        traceId: { type: string }
+        query: { type: string }
+        hits:
+          type: array
+          items:
+            type: object
+            required: [memoryId, score]
+            properties:
+              memoryId: { type: string }
+              score: { type: number, example: 0.87 }
+              method: { type: string, enum: [vector, keyword], description: vector=向量命中，keyword=FTS5 降级命中 }
+              title: { type: string }
+              content: { type: string }
+              type: { $ref: '#/components/schemas/MemoryType' }
+              companionId: { type: string, nullable: true }
+        summary: { type: string, nullable: true, description: 注入模型前的压缩摘要 }
+    MemoryPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Memory' }
+        nextCursor: { type: string, nullable: true }
+
+    # ---------- 文件 ----------
+    FileRef:
+      type: object
+      required: [fileId]
+      properties:
+        fileId: { type: string }
+        url: { type: string, description: "本地访问地址（如 /api/v1/files/{fileId}）" }
+        thumbnailFileId: { type: string, nullable: true }
+        fileName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        duration: { type: integer, nullable: true, description: 语音/视频毫秒数（如有） }
+
+    # ---------- API 配置 ----------
+    ApiProfile:
+      type: object
+      required: [id, name, provider, baseUrl]
+      properties:
+        id: { type: string }
+        name: { type: string, maxLength: 30 }
+        provider: { type: string, description: 服务商标识（openai/anthropic/ollama/qwen/custom 等） }
+        region: { type: string, description: 国内/国外/本地等展示分组 }
+        protocol: { type: string, enum: [openai-compatible, anthropic, ollama], default: openai-compatible }
+        baseUrl: { type: string, example: http://localhost:11434 }
+        secretConfigured: { type: boolean, description: 是否已配置密钥 }
+        maskedKey: { type: string, nullable: true, description: 展示用掩码，如 sk-****abcd }
+        chatModel: { type: string }
+        visionModel: { type: string }
+        hearingModel: { type: string }
+        ttsModel: { type: string }
+        voiceCloneModel: { type: string }
+        videoModel: { type: string }
+        imageModel: { type: string }
+        temperature: { type: number, example: 0.8 }
+    ApiProfileCreate:
+      type: object
+      required: [name, provider, baseUrl]
+      properties:
+        name: { type: string, maxLength: 30 }
+        provider: { type: string }
+        region: { type: string }
+        protocol: { type: string, enum: [openai-compatible, anthropic, ollama], default: openai-compatible }
+        baseUrl: { type: string, minLength: 1 }
+        apiKey: { type: string, description: 明文仅在本请求中出现，服务端加密保存后不再返回 }
+        chatModel: { type: string }
+        visionModel: { type: string }
+        hearingModel: { type: string }
+        ttsModel: { type: string }
+        voiceCloneModel: { type: string }
+        videoModel: { type: string }
+        imageModel: { type: string }
+        temperature: { type: number }
+    ApiProfileUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, maxLength: 30 }
+        provider: { type: string }
+        region: { type: string }
+        protocol: { type: string, enum: [openai-compatible, anthropic, ollama] }
+        baseUrl: { type: string }
+        apiKey: { type: string, description: 缺省=不更新密钥 }
+        chatModel: { type: string }
+        visionModel: { type: string }
+        hearingModel: { type: string }
+        ttsModel: { type: string }
+        voiceCloneModel: { type: string }
+        videoModel: { type: string }
+        imageModel: { type: string }
+        temperature: { type: number }
+    ApiProfileTestResult:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [success, failed] }
+        latencyMs: { type: integer, nullable: true }
+        detail: { type: string, description: 失败原因摘要 }
+    ModelInfo:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, example: qwen2.5:7b }
+        name: { type: string }
+        capabilities:
+          type: array
+          items: { type: string }
+          description: 按模型名推断：对话/流式/视觉/听觉/文生图 等
+        serving: { type: boolean, description: 本地已加载状态（Ollama 时有效） }
+
+    # ---------- 用量 ----------
+    UsageSummary:
+      type: object
+      required: [period]
+      properties:
+        period:
+          type: object
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        totalTokens: { type: integer }
+        inputTokens: { type: integer }
+        outputTokens: { type: integer }
+        cachedTokens: { type: integer }
+        estimatedCost: { type: number, example: 0, description: 仅远程服务商计费，Ollama 为 0 }
+        byCapability:
+          type: array
+          items:
+            type: object
+            properties:
+              capability: { type: string }
+              tokens: { type: integer }
+              estimatedCost: { type: number }
+    UsageRecord:
+      type: object
+      required: [usageId, capability, createdAt]
+      properties:
+        usageId: { type: string }
+        capability: { type: string, description: chat/vision/hearing/tts 等 }
+        provider: { type: string }
+        model: { type: string }
+        conversationId: { type: string, nullable: true }
+        companionId: { type: string, nullable: true }
+        inputTokens: { type: integer }
+        outputTokens: { type: integer }
+        cachedTokens: { type: integer }
+        latencyMs: { type: integer }
+        status: { type: string, enum: [success, failed] }
+        estimatedCost: { type: number }
+        createdAt: { type: string, format: date-time }
+    UsageRecordPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UsageRecord' }
+        nextCursor: { type: string, nullable: true }
+
+    # ---------- 数据导出 ----------
+    ExportData:
+      type: object
+      required: [version, exportedAt]
+      properties:
+        version: { type: string, enum: [qingban_api_v1], description: qingban=旧品牌兼容名，语义同 qinban_api_v1 }
+        exportedAt: { type: string, format: date-time }
+        user: { $ref: '#/components/schemas/UserProfile' }
+        apiProfiles:
+          type: array
+          description: 脱敏导出（apiKey 永不包含；secretConfigured=true 占位）
+          items: { $ref: '#/components/schemas/ApiProfile' }
+        companions:
+          type: array
+          items: { $ref: '#/components/schemas/Companion' }
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/Group' }
+        messages:
+          type: object
+          description: conversationId → 消息数组（供整库恢复）
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/Message' }
+        memories:
+          type: array
+          items: { $ref: '#/components/schemas/Memory' }
+        filesManifest:
+          type: array
+          description: 附件清单（fileId → 相对路径/校验和），恢复时由本地目录快照补齐
+          items: { type: string }
+        settings: { $ref: '#/components/schemas/UserSettings' }
+    ImportResult:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string, description: 识别的数据版本（qingban_api_v1 / qinban_frontend_v4 等） }
+        counts:
+          type: object
+          properties:
+            companions: { type: integer }
+            groups: { type: integer }
+            conversations: { type: integer }
+            messages: { type: integer }
+            memories: { type: integer }
+            files: { type: integer }
+        skipped:
+          type: integer
+          description: 按 id 去重跳过的已有记录数
