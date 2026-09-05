@@ -1,6 +1,10 @@
 package model
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // Message 聊天消息(单聊与群聊统一实体)
 // 定位:以"会话归属 + 文本内容 + 关联文件"为最小模型(用户基准版);
@@ -16,6 +20,12 @@ type Message struct {
 	Role string `gorm:"size:16;index;default:user" json:"role"`
 	// SenderID 发送者:单聊助手消息=companionId,群聊=发言角色 id,用户消息=空(本地单用户)。
 	SenderID string `gorm:"size:64;index" json:"sender_id"`
+	// Mentions 被点名的成员 id 列表(仅群聊 user 消息;@解析见 utils.ParseMentions)。
+	// 点名语义:收到消息时只调度列出的成员,未点名成员的消息留作其攒批内容。
+	Mentions []string `gorm:"type:text;serializer:json" json:"mentions,omitempty"`
+	// UserReadAt 用户阅读该消息的时刻(消息级已读回执;空=用户未读)。
+	// 会话级红点仍以 conversations.unread 为准,本字段供逐条"已读/未读"展示。
+	UserReadAt *time.Time `gorm:"column:user_read_at;index" json:"user_read_at,omitempty"`
 	// Content 消息内容(纯文本,或含 ![图](fileID)/[文件名](fileID) 引用标记)。
 	Content string `gorm:"type:text;not null" json:"content"`
 	// ReplyToID 引用的消息ID(回复消息;可空)。
@@ -43,7 +53,3 @@ type File struct {
 	Path string `gorm:"size:500;not null" json:"path"`
 }
 
-type 群聊消息是否已读 struct {
-	ID     int64  `gorm:"primary_key"` //引用的群聊消息ID
-	bitmap []byte //xxx已读(使用可变位图表示)
-}

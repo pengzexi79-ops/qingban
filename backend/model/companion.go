@@ -52,6 +52,9 @@ type ChatStyle struct {
 	ReplyDelay int `json:"replyDelay"`
 	// BubbleStyle:气泡风格(soft/standard,前端渲染)。
 	BubbleStyle string `json:"bubbleStyle"`
+	// AllowSilent:是否允许"已读不回"(模型收到批次后可选择不产出回复)。
+	// 默认 true:根治"每条消息都回一条"的鬼畜;false 时空输出按异常重试一次。
+	AllowSilent bool `json:"allowSilent"`
 }
 
 // ProactiveConfig:主动陪伴规则(主动消息任务属第二阶段;字段随角色配置一并持久化)。
@@ -101,6 +104,8 @@ type Companion struct {
 	MemorySettings MemorySettings `json:"memorySettings" gorm:"type:text;serializer:json"`
 	// ChatStyle:消息与风格设置。
 	ChatStyle ChatStyle `json:"chatStyle" gorm:"type:text;serializer:json"`
+	// Dispatch:批次投喂与短期记忆调度参数(零值回落 DispatchSettings 缺省常量)。
+	Dispatch DispatchSettings `json:"dispatchSettings" gorm:"type:text;serializer:json"`
 	// Proactive:主动陪伴设置。
 	Proactive ProactiveConfig `json:"proactive" gorm:"type:text;serializer:json"`
 	// Capabilities:该角色能力开关(是否真实可用由后端验证)。
