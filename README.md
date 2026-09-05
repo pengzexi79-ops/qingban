@@ -65,35 +65,41 @@
 
 ## 技术实现
 
-- **Vue 3 Production CDN**：无构建步骤，便于团队快速查看和继续迁移。
+- **Vue 3 + Vite**：使用标准 ES Module、单文件组件和 Vite 开发/生产构建流程。
+- **Vue 单文件组件**：应用入口为 `frontend/src/App.vue`，状态与交互由 Vue 响应式系统驱动。
 - **原生 CSS**：固定视口应用壳、页面内部滚动、桌面/移动响应式布局和深色主题。
-- **原生 JavaScript**：页面状态、模拟交互、头像压缩、数据导入导出。
 - **localStorage**：本地键名为 `qinban_frontend_v4`，兼容读取原品牌的 `qingban_frontend_v4/v3/v2` 演示数据。
 
-当前保留 CDN 架构是为了先完成产品页面，不做无收益的框架重写。进入正式工程阶段后，可在保持页面信息架构和数据模型的前提下迁移至 Vite + Vue 3 或 React。
+当前迁移保留了原有页面信息架构、交互和数据模型；旧的 `frontend/js`、`frontend/css`、`frontend/vendor` 文件仅作为历史兼容参考，新的运行入口不再引用它们。
 
-## D 盘本地运行
+## 本地运行
 
 ```powershell
-Set-Location D:\codex\qingban
-python -m http.server 8765
+Set-Location <仓库路径>\frontend
+pnpm install
+pnpm dev
 ```
 
-浏览器访问：`http://localhost:8765/`
+浏览器访问终端输出的本地地址（默认：`http://127.0.0.1:5173/`）。生产构建使用 `pnpm build`，预览使用 `pnpm preview`。
 
-页面依赖 Vue CDN，首次加载需要能够访问 CDN。项目本身不包含任何真实 API Key。
+Vue 和 Vite 依赖通过 `frontend/package.json` 管理，页面运行不依赖 Vue CDN。项目本身不包含任何真实 API Key。
 
 ## 项目结构
 
 ```text
-D:\codex\qingban\
-├── index.html                  # Vue 模板、全部页面和弹窗结构
-├── css\style.css              # 视觉系统、固定高度、内部滚动和响应式布局
-├── js\store.js                # 本地数据模型、种子数据、兼容迁移和导出脱敏
-├── js\app.js                  # Vue 状态、交互、模拟回复和 API 联调逻辑
-├── docs\openapi.json          # 早期会话/记忆接口草案
-├── docs\BACKEND_HANDOFF.md    # 当前完整前端数据和后端接入说明
-└── README.md                   # 项目范围与运行说明
+qingban\frontend\
+├── index.html                  # Vite HTML 入口
+├── package.json                # Vue 3、Vite 和构建脚本
+├── vite.config.js              # Vite 配置
+├── src\main.js                # createApp(App).mount('#app')
+├── src\App.vue                # Vue 单文件组件入口
+├── src\app.js                 # 页面状态、交互、模拟回复和 API 联调逻辑
+├── src\store.js               # ES Module 数据层、本地存储和数据迁移
+├── src\style.css              # 视觉系统、固定高度、内部滚动和响应式布局
+├── public\assets\             # 由 Vite 原样提供的品牌资源
+├── ..\docs\openapi.json      # 早期会话/记忆接口草案
+├── ..\docs\BACKEND_HANDOFF.md # 当前完整前端数据和后端接入说明
+└── ..\README.md              # 项目范围和运行说明
 ```
 
 ## 后端接入原则
