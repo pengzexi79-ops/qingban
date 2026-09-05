@@ -1,11 +1,12 @@
 package ai
 
-// 群聊轮次:手动触发入口(与批次调度引擎联动)。
-// 语义(docs/batch_dispatch_design.md §3):手动触发轮次 POST /groups/{id}/rounds
-// = 调度引擎"点名全员"立即整批投喂(绕过攒批静默窗,仍受冷却约束);被点名消息(消息内 @)
-// 走同一引擎的 FlushConversation(点名子集)。轮次生命周期(rounds 表 + round_* SSE 事件)
-// 由 server 装配层按引擎 hooks(OnRoundStart/OnReply/OnSilent/OnConsumed)维护:
-// 静默成员不记入 speakers。重复触发受幂等键与冷却时间约束。
+// 群聊回合(动态):手动触发入口(与批次调度引擎联动)。
+// 语义:回合 = 运行期易失态,不落库(见 core/cache.go:现场 key=round:<convID>,
+// 冷却 key=flush:<convID>);手动触发 POST /groups/{id}/rounds = 调度引擎"点名全员"
+// 立即整批投喂(绕过攒批静默窗,仍受冷却约束);被点名消息(消息内 @)走同一引擎的
+// FlushConversation(点名子集)。回合生命周期(round_* SSE 事件)由 server 装配层按引擎
+// hooks(OnRoundStart/OnReply/OnSilent/OnConsumed)维护:静默成员不记入回合产出;
+// AI 完成本轮回复后回合现场即删(无历史回放)。重复触发受幂等键与冷却时间约束。
 // 伪代码草稿:调度细节以函数体内伪代码注释占位。
 
 import (
@@ -17,13 +18,13 @@ import (
 	"qingban/model"
 )
 
-// RoundResult:轮次创建结果(openapi RoundResult;轮次改为异步执行,响应即返回)。
+// RoundResult:回合创建结果(openapi RoundResult;动态回合,响应即返回)。
 type RoundResult struct {
-	// RoundID:本轮 id(rounds 自增主键,数字直出)。
+	// RoundID:运行期回合 id(进程内自增,仅在本次响应与后续 round_* 事件流内有效)。
 	RoundID uint `json:"roundId"`
-	// Status:running(已交棒调度引擎,整批投喂进行中;completed/cancelled 由事件流转)。
+	// Status:running(已交棒调度引擎,整批投喂进行中;完成/取消经 round_end 事件表达)。
 	Status string `json:"status"`
-	// Messages:本轮产生的 AI 消息(异步执行,响应时为空;完成后经 round_message 事件逐条推送)。
+	// Messages:本回合产生的 AI 消息(异步执行,响应时为空;完成后经 round_message 事件逐条推送)。
 	Messages []model.Message `json:"messages,omitempty"`
 	// CancelReason:取消原因(cancelled 非空,如 COOLDOWN_ACTIVE)。
 	CancelReason *string `json:"cancelReason,omitempty"`
@@ -56,30 +57,31 @@ type GroupRoundArgs struct {
 var groupLock = newGroupLocks()
 
 // RunGroupRound:触发一轮群聊(调用点:POST /groups/{id}/rounds,幂等)。
-// 语义:创建轮次记录后交棒调度引擎 FlushConversation(全员),立即返回 roundId(running)。
+// 语义:前置校验通过 → 生成运行期回合(不落库),交棒调度引擎 FlushConversation(全员),
+// 立即返回 roundId(running)。
 //
-//	---- 前置校验(失败 → cancelled + 对应错误码)----
+//	---- 前置校验(失败 → 错误码,无落库)----
 //	members := filterEnabled(args.Members)                       // ① 剔除已删/禁用角色
-//	if len(members) < 2 { return cancelled("成员不足") }
-//	last := max(rounds 表 triggered_at, args.Group.LastRoundAt)  // ② 冷却(进程重启后依赖 DB 兜底)
+//	if len(members) < 2 { return err("成员不足") }
+//	last, _ := core.Mem.GetUnix("flush:"+convID)                // ② 冷却(易失缓存;重启即清零,可接受)
 //	if args.Now.Sub(last) < strategy.cooldownSeconds { return err(CodeCooldownActive) }
 //	lock := groupLock.get(args.Group.ID); lock.Lock()            // ③ 防连点双轮(引擎侧另有 running 防重入)
-//	round := model.Round{GroupID: args.Group.ID,                 // ④ 落 Round(running;id 自增)
-//	                      TriggeredAt: args.Now, Status: model.RoundRunning}
-//	db.Create(&round); hub.Publish(EventRoundStart, {roundId: round.ID, groupId, memberIds})  // ⑤
+//	roundID := nextRoundSeq()                                    // ④ 运行期回合号(进程内递增计数器)
+//	现场 JSON{roundID, targets: members, produced: []msgID} 写入 core.Mem(key=round:<convID>)
+//	hub.Publish(EventRoundStart, {roundId: roundID, groupId, memberIds})  // ⑤
 //
 //	---- 交棒批次调度引擎(见 dispatch.go FlushConversation)----
-//	err := Dispatcher.FlushConversation(ctx, args.ConversationID, nil)   // ⑥ mentions=nil=点名全员
+//	err := Dispatcher.FlushConversation(ctx, args.ConversationID, true, nil)   // ⑥ 点名全员
 //	//   引擎逐成员:读各自未读批(成员水位 member_cursors)→ 组上下文(短期记忆+本批)→ 调用;
-//	//   回复产出经 hooks.OnReply:落库 assistant 消息 → round_speakers 插入 {round, sp.ID, msg.ID}
+//	//   回复产出经 hooks.OnReply:落库 assistant 消息 → 追加到 round 现场.produced
 //	//                               → hub.Publish(round_message + new_message);
-//	//   静默产出经 hooks.OnSilent:不落消息不占 speakers(已读不回,消费水位照常推进);
-//	//   整批结束由装配层 hooks 收尾:round.Status=completed/EndedAt=now、group.LastRoundAt=now
-//	//                                → hub.Publish(round_end {roundId, messages})
-//	//   全员失败路径:round.Status=cancelled + CancelReason(COOLDOWN/成员不足/过程错误)
+//	//   静默产出经 hooks.OnSilent:不落消息不进现场(已读不回,消费水位照常推进);
+//	//   整批结束由装配层 hooks 收尾:刷新 flush 冷却戳 → hub.Publish(round_end {roundId, messages})
+//	//                                → core.Mem.Delete(round:<convID>)(回复完成即终止本轮)
+//	//   全员失败路径:round_end {status: cancelled, cancelReason}
 //
 //	---- 响应 ----
-//	return &RoundResult{round.ID, running, nil, nil}, nil  // ⑦ 立即返回(异步执行)
+//	return &RoundResult{roundID, "running", nil, nil}, nil  // ⑦ 立即返回(异步执行)
 //
 // TODO(实现):见函数注释 ①~⑦
 func RunGroupRound(ctx context.Context, args GroupRoundArgs) (*RoundResult, error) {

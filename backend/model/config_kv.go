@@ -14,8 +14,8 @@ const (
 	KVBootstrapDone = "k:bootstrap:done"
 	// KVDataVersion:数据版本(写入 qingban_api_v1;导入前端数据时记录来源版本)。
 	KVDataVersion = "k:migrate:data_version"
-	// KVDefaultModelConfigID:默认模型配置 id(model_configs.id;删除保护用)。
-	KVDefaultModelConfigID = "k:model_configs:default_id"
+	// KVDefaultAPIConfigID:默认 API 配置 id(api_configs.id;删除保护/角色回落用)。
+	KVDefaultAPIConfigID = "k:api_configs:default_id"
 	// KVMigratePrefix:导入迁移统计(保留最近一次,便于回显)。
 	KVMigratePrefix = "k:migrate:last_stats"
 )

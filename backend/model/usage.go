@@ -42,8 +42,8 @@ type UsageRecord struct {
 	ConversationID *uint `json:"conversation_id,omitempty" gorm:"index"`
 	// CompanionID:服务角色(companions.id;可空)。
 	CompanionID *uint `json:"companion_id,omitempty" gorm:"index"`
-	// ModelConfigID:使用的模型配置(model_configs.id;可空)。
-	ModelConfigID *uint `json:"model_config_id,omitempty" gorm:"index"`
+	// APIConfigID:调用的 API 配置(api_configs.id;可空)。
+	APIConfigID *uint `json:"api_config_id,omitempty" gorm:"index"`
 	// InputTokens/OutputTokens/CachedTokens:输入/输出/缓存 token。
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`

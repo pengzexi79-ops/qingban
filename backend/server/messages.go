@@ -2,10 +2,14 @@ package server
 
 // P2 消息端点:历史、发送、删除、清空 + 跨会话搜索。
 // 发送语义(v3 + docs/batch_dispatch_design.md):POST 只负责"用户消息落库 + 广播",
-// 立即返回 201;AI 回复由异步批次调度引擎产出,经 DispatchHooks 落库并发 SSE(时序:
-// typing → delta* → message),单聊与群聊同一入口。附件走"先 /files 上传再在正文引用",
-// 落库时由引用标记建立 message_files 关系;点名写 message_mentions 关系 + MentionAll 布尔。
+// 立即返回 201;AI 回复由异步批次调度引擎产出(AI 包 Dispatcher,装配见 init/app.go:
+// server 提供 DispatchRepo 的 GORM 实现 + TurnRunner + DispatchHooks),经 SSE 推送
+// (时序:typing → delta* → new_message,单聊与群聊同一入口)。
+// 附件:先 POST /files 再在正文写入引用标记,落库时由 utils.ParseRefs 解析 id 建
+// message_files 关系;点名(群聊 @)经 utils.ParseMentions 写 message_mentions + MentionAll 布尔。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位(实现时按需恢复 import)。
+// v2 注记:Message 出参(contentType/refs/senderId 等)为视图派生,勿直出实体——
+// 实体键为 snake_case(conversation_id/sender_companion_id),且实体无 contentType/refs 列。
 
 import (
 	"github.com/gin-gonic/gin"
@@ -14,19 +18,25 @@ import (
 )
 
 // MessageCreateReq:POST .../messages 请求体。
+// 校验:content 上限 5000 字(含引用标记);去标记纯文本 ≤500、图片 ≤9、附件 ≤20
+// 由 utils.ParseRefs 在解析时统一校验(见 utils/refs.go 常量)。
 type MessageCreateReq struct {
 	// Content:正文(可含 ![图](fileId)/[名](fileId) 引用标记)。
 	Content string `json:"content" binding:"max=5000"`
-	// MentionIDs:显式点名成员 id(群聊;前端已解析时可传,与后端 @ 解析结果并集)。
+	// MentionIDs:显式点名成员 id(群聊;数字 companions.id,与后端 @ 解析结果并集)。
 	MentionIDs []uint `json:"mentionIds,omitempty"`
 }
 
-// MessageSendResult:发送响应(openapi MessageSendResult)。
+// MessageSendResult:发送响应(v3 语义:201 即返;AI 回复异步经 SSE 到达,assistantMessage 恒空)。
+// 结构兼容旧契约(openapi MessageSendResult)保留字段位;memoryCandidates 同样改经
+// memory_candidates SSE 事件送达,同步响应体仅作占位。
 type MessageSendResult struct {
 	// UserMessage:用户消息(已落库)。
 	UserMessage model.Message `json:"userMessage"`
 	// AssistantMessage:AI 回复(异步引擎产出,本次响应恒为空;经 SSE 到达)。
 	AssistantMessage *model.Message `json:"assistantMessage,omitempty"`
+	// MemoryCandidates:记忆候选(异步事件承载;保留字段兼容旧契约)。
+	MemoryCandidates []model.MemoryDraft `json:"memoryCandidates,omitempty"`
 }
 
 // hListMessages:GET /conversations/:conversationId/messages —— 历史(升序,向前翻页)。
@@ -47,36 +57,47 @@ func hSendMessage(c *gin.Context) {
 	// id := parseUintParam(c, "conversationId")
 	// var req MessageCreateReq; if !bind(c, &req) { return }
 	// conv := db.Preload("Messages").First(&model.Conversation{}, id); if nil { 404 }
-	// plain := req.Content
-	// ① 点名解析:单聊 → all=false,nil;群聊 → allFlag, hits := utils.ParseMentions(plain, 群成员名→id)
-	//    并集 req.MentionIDs;ids 中不存在的成员过滤
-	// ② 用户消息落库(role=user,sender_companion_id 为空):
+	// refIDs, plain, err := utils.ParseRefs(req.Content)            // ① 引用校验(纯文本500/图9/附件20)
+	// if err != nil { respondErr(422, err.Error()); return }        //    附:plain 供长度/搜索/摘要统计
+	// ② 点名解析:单聊 → all=false,nil;群聊 → all, hits := utils.ParseMentions(plain, 群成员名→id)
+	//    并集 req.MentionIDs(数字 id;ids 中不存在的成员过滤);all=@所有人/@all
+	// ③ 用户消息落库(role=user,sender_companion_id 为空;content 保留原文引用标记):
 	// userMsg := model.Message{ConversationID: conv.ID, Role: "user",
-	//     MentionAll: allFlag, Content: plain}
+	//     MentionAll: all, Content: req.Content}
 	// db.Create(&userMsg)
-	// ③ 点名关系行:for _, cid := range ids { db.Create(&model.MessageMention{userMsg.ID, cid}) }
-	// ④ 附件关系:refs := utils.ParseRefsIds(plain); for fid := range refs {
-	//    db.Create(&model.MessageFile{MessageID: userMsg.ID, FileID: fid}) }  // 忽略不存在/重复
-	// ⑤ 会话行摘要前滚(自己消息未读不加):refreshConversation(conv, &userMsg, unread:false)
+	// ④ 点名关系行:for _, m := range hits { db.Create(&model.MessageMention{userMsg.ID, m.ID}) }  // 去重
+	//    请求体显式 mentionIds 同法(与解析结果并集,均过滤非成员)
+	// ⑤ 附件关系:for _, fid := range refIDs { db.Create(&model.MessageFile{MessageID: userMsg.ID,
+	//    FileID: uint(fid)}) }                                      // 忽略不存在;重复允许(去重落库)
+	// ⑥ 会话行摘要前滚(自己消息未读不加):refreshConversation(conv, &userMsg, unread:false)
 	// hub.Publish(EventNewMessage, {conversationId: id, message: userMsg})
 	// respond(c, 201, MessageSendResult{UserMessage: userMsg})
 	//
-	// ---- 调度:交棒异步批次引擎(单聊/群聊统一) ----
-	// ai.Dispatch.NotifyMessage(ctx, userMsg)
-	//     // 引擎按设计攒批/点名投喂;AI 回复经 server 装配的 DispatchHooks:
-	//     //   OnReply → 落库 assistant 消息(message_files/usage 回填)→ refreshConversation(+1)
-	//     //             → hub.Publish(new_message/typing/delta);记忆候选事件由引擎另发
-	//     //   OnSilent → 已读不回(仅推进水位,不落库不广播)
-	//     // 群聊成员回复对其他成员是"新消息",自然进入各自未读池
+	// ---- 调度:交棒异步批次引擎(单聊/群聊统一,见 AI/dispatch.go)----
+	// aiDispatcher.NotifyMessage(ctx, userMsg)
+	//     // 引擎按"点名即时/闲话攒批"决策投喂(静默窗 core.IdleWindow / 攒批硬顶 / 群冷却);
+	//     // 引擎产出经装配层注入的 DispatchHooks 回调:
+	//     //   OnReply(convID, msg)    → hub.Publish(new_message)(AI 回复已由引擎经
+	//     //                              repo.SaveAssistantMessage 落库并刷新会话摘要/未读)
+	//     //   OnRoundStart(convID, readerIDs) → hub.Publish(round_start)
+	//     //   OnSilent/OnConsumed     → 已读不回/水位推进(仅审计日志,无前端事件)
+	//     // 记忆候选:引擎产出 ChatOutcome.Candidates → ai.PersistCandidates 按角色记忆模式
+	//     //          确认/入库 → hub.Publish(memory_candidates, {conversationId, candidates})
+	//     // 装配处(init)构造 ai.NewDispatcher(gormRepo, turnRunner, hooks),非包级单例。
 }
 
 // hDeleteMessage:DELETE .../messages/:messageId —— 删除单条消息(级联清理点名/附件关系)。
 func hDeleteMessage(c *gin.Context) {
 	// cid := parseUintParam(c, "conversationId"); mid := parseUintParam(c, "messageId")
 	// msg := db.Where("id = ? AND conversation_id = ?", mid, cid).First(&model.Message{}); if nil { 404 }
-	// tx { db.Delete(&msg) }                                           // message_mentions/message_files 级联
-	// refreshConversationSummary(conv)                                  // 摘要回退倒数第二条(取 id 次大)
-	// hub.Publish("message_deleted", {conversationId: cid, messageId: mid})
+	// tx {
+	//     db.Delete(&msg)                                           // message_mentions/message_files 级联
+	//     delFTSMessageRow(mid)                                     // 消息 FTS 行非外键,手动清(若有)
+	// }
+	// refreshConversationSummary(conv)                              // 摘要回退倒数第二条(取 id 次大)
+	// // 被删除消息若被其他消息回复引用,其 ReplyToID 由外键 SET NULL;AI 消费水位不回退
+	// // (已读即归档语义下,删历史消息不影响后续投喂)
+	// hub.Publish(EventThreadsChanged, {})                          // 会话列表摘要变更(无专用删除事件)
 	// respond(c, 204)
 }
 
@@ -87,6 +108,8 @@ func hClearMessages(c *gin.Context) {
 	// conv := db.First(&model.Conversation{}, id); if nil { 404 }
 	// tx {
 	//     db.Where("conversation_id = ?", id).Delete(&model.Message{})   // 级联点名/附件关系
+	//     db.Where("conversation_id = ?", id).Delete(&model.MemberCursor{}) // 人/AI 水位一并复位
+	//     delFTSMessagesOf(id)                                          // 消息 FTS 行非外键,手动清(若有)
 	//     conv.LastMessageID = nil; conv.LastContent = ""; conv.LastSenderName = nil; conv.Unread = 0
 	//     db.Save(&conv)
 	// }
@@ -125,7 +148,11 @@ func hSearchMessages(c *gin.Context) {
 }
 
 // ---- 内部链路(实现时随测试逐个落地) ----
-// refreshConversation(conv, msg, unread bool)        // 会话行摘要/LastActiveAt/LastMessageID 前滚
+// refreshConversation(conv, msg, unread bool)        // 会话行摘要/LastActiveAt/LastMessageID 前滚(自己的消息 unread=false)
 // refreshConversationSummary(conv)                    // 删除/清空后摘要回退(取 id 次大消息)
-// DispatchHooks(OnUserMsg/OnReply/OnSilent/OnCandidate)// 引擎事件 → 落库/会话维护/SSE 广播(server 装配)
+// gormRepo:实现 AI.DispatchRepo 全部方法(会话/成员/未读批/水位/短期记忆/AI 消息落库)
+//           —— 落库 SaveAssistantMessage 时补 msg.ID 并刷新会话行,再交由引擎触发 OnReply 广播
+// turnRunner:ai.TurnRunner——一次成员发言(装配期接 ai.RunTurn 或 ai.ChatWithCompanion 流水线)
+// hooks:ai.DispatchHooks{OnRoundStart/OnReply/OnSilent/OnConsumed/LogError}
+//        —— OnReply 内 hub.Publish(new_message)+usage 关联回填;记忆候选见 hSendMessage 注释
 // buildChatArgs(companionID, userMsg) ai.ChatArgs    // 组装:角色配置/用户画像/最近轮历史(供 TurnRunner)

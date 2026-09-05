@@ -1,6 +1,15 @@
 package server
 
-// 路由注册总表(P0~P3 全量端点,对应 openapi.phase1.yaml paths)。
+// 路由注册总表(P0~P3 全量端点)。路由集合自 openapi.phase1.yaml 冻结后已按
+// Model v3(数字自增主键/会话行 id/api_configs)演进,与旧契约的差异总清单
+// (openapi v2 重写时以本注记 + 各文件"v2 注记"为准,详见 docs/model_design.md):
+//   ① id 一律数字自增(文档仍写 uuid4 字符串;companionId/conversationId 等路径参数同);
+//   ② API 配置端点 /api-configs(文档旧路径 /api-profiles、字段 provider/baseUrl/chatModel 等
+//      旧模型已废弃,现为 APIConfig 实体:name/base_uri/api_type/能力开关/parent_id);
+//   ③ 不提供 GET /groups/:groupId/rounds——轮次为运行期易失态,无历史回放接口;
+//   ④ 会话以 conversations.id 定位(旧契约 conversationId=companionId/groupId 归属语义已废,
+//      现归属由会话行 companion_id/group_id 列表达);
+//   ⑤ /me、/bootstrap 的 userId 为数字主键;分页游标 nextCursor 为数字 id(文档为字符串)。
 // 设计约定:
 //   - 全部业务端点挂在 /api/v1 分组(Base URL 见契约);
 //   - 中间件分层:开放端点(health/bootstrap/events/refresh)只挂 trace;
@@ -66,9 +75,10 @@ func RegisterRoutes(g *gin.Engine) {
 	protect.DELETE("/groups/:groupId", hDeleteGroup)
 	protect.POST("/groups/:groupId/members", hAddGroupMembers)
 	protect.DELETE("/groups/:groupId/members/:companionId", hRemoveGroupMember)
-	protect.GET("/groups/:groupId/rounds", hListGroupRounds) // 阶段一空列表占位
+	// 注:不再提供 GET /groups/:groupId/rounds——轮次为运行期易失态,无历史回放接口;
+	// 手动"触发一轮"见下方 POST(幂等分组)。
 	round := api.Group("/groups/:groupId/rounds", MiddlewareTrace(), MiddlewareLocalToken(), MiddlewareIdempotency())
-	round.POST("", hTriggerGroupRound) // 同步一轮(幂等)
+	round.POST("", hTriggerGroupRound) // 运行期动态回合(幂等)
 
 	// ---- P1/P3 长期记忆 ----
 	protect.GET("/memories", hListMemories)
@@ -90,13 +100,13 @@ func RegisterRoutes(g *gin.Engine) {
 	protect.DELETE("/files/:fileId", hDeleteFile)
 	protect.POST("/files/purge-orphans", hPurgeOrphans)
 
-	// ---- P3 模型/API 配置(ModelConfig 基准;旧 /api-profiles 端点已废弃) ----
-	protect.GET("/model-configs", hListModelConfigs)
-	protect.POST("/model-configs", hCreateModelConfig)
-	protect.PATCH("/model-configs/:modelConfigId", hPatchModelConfig)
-	protect.DELETE("/model-configs/:modelConfigId", hDeleteModelConfig)
-	protect.POST("/model-configs/:modelConfigId/test", hTestModelConfig)
-	protect.GET("/model-configs/:modelConfigId/models", hListModelConfigModels)
+	// ---- P3 API 配置(APIConfig 基准;旧 /api-profiles、/model-configs 均已废弃) ----
+	protect.GET("/api-configs", hListAPIConfigs)
+	protect.POST("/api-configs", hCreateAPIConfig)
+	protect.PATCH("/api-configs/:apiConfigId", hPatchAPIConfig)
+	protect.DELETE("/api-configs/:apiConfigId", hDeleteAPIConfig)
+	protect.POST("/api-configs/:apiConfigId/test", hTestAPIConfig)
+	protect.GET("/api-configs/:apiConfigId/models", hListAPIConfigModels)
 
 	// ---- P2 用量 ----
 	protect.GET("/usage/summary", hGetUsageSummary)

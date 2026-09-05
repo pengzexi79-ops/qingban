@@ -4,8 +4,15 @@ package server
 // 布局:文件二进制落 {DataDir}/{Path}(Path 为登记的相对路径);图片缩略图按约定
 // 以物理文件 {Path}.thumb 存放(不入库)。
 // 引用模型(v3):附件经 message_files(消息↔文件多对多);头像经各表 file_id 列
-// (User.FileID/Companion.FileID/Group.FileID)。删除保护=按上述引用计数,孤儿=7 天前且无引用。
+// (User.FileID/Companion.FileID/Group.FileID;Companion.FileID 为指针=可空)。
+// 删除保护=按上述引用计数,孤儿=7 天前且无引用。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位(实现时按需恢复 import)。
+// v2 注记(供文档与模型演进):
+//   - 实体 files 未落 kind/scope 列——上传表单 kind 仅决定大小/嗅探/宽高,scope 仅登记语义,
+//     故"头像须先以 scope=avatar 上传"无法入库校验,现只校验文件存在;
+//   - FileRef.thumbnailFileId:缩略图为 {Path}.thumb 物理文件,无独立 files 行,无 id 可给
+//     (契约字段置空即可;若前端需直接引用缩略图资源,用 GET /files/{id}?thumbnail=1);
+//   - FileRef.duration(语音/视频毫秒):实体无此列,如需请 model.File 增列(或运行期探测)。
 
 import (
 	"github.com/gin-gonic/gin"

@@ -6,9 +6,9 @@ package model
 // 设计拍板见 docs/batch_dispatch_design.md(§6 决策记录 #1/#4)。
 
 // 缺省配置常量(角色级可被 DispatchSettings 覆盖;日期因子曲线见 AI 包 SummaryDateFactor)。
+// 注:DebounceSeconds 相关缺省已废弃——用户"输入完成"判定窗口统一取 core.IdleWindow
+// (默认 2s,编译期可注入);本文件常量仅保留 MaxBatch/KvTTL/CharRatio 语义。
 const (
-	// DefaultDebounceSeconds:攒批静默窗(秒),默认 12。
-	DefaultDebounceSeconds = 12
 	// DefaultMaxBatchCount:攒批硬顶(条),默认 20。
 	DefaultMaxBatchCount = 20
 	// DefaultMaxBatchChars:攒批硬顶(字),默认 3000。
@@ -21,7 +21,7 @@ const (
 
 // DispatchSettings:单个 AI 成员的批次对话调度参数(内嵌于 Companion)。
 type DispatchSettings struct {
-	// DebounceSeconds 攒批静默窗(秒):距最后一条用户消息达到该值且期间无新消息 → 投喂。
+	// DebounceSeconds 已废弃:输入完成判定统一 core.IdleWindow(见 const 注记),字段保留兼容。
 	DebounceSeconds int `json:"debounceSeconds"`
 	// MaxBatchCount 攒批硬顶(条):未投喂消息达到该条数立即投喂(防积压)。
 	MaxBatchCount int `json:"maxBatchCount"`
@@ -35,13 +35,20 @@ type DispatchSettings struct {
 }
 
 // ApplyDefaults:零值字段回落缺省(返回新值,不改原对象)。
-// 说明:逐字段 if <=0 回落上方 Default* 常量;CharRatio 回落 DefaultCharRatio。
+// 说明:逐字段 if <=0 回落上方 Default* 常量;CharRatio 回落 DefaultCharRatio;
+// DebounceSeconds 判定废弃(见 core.IdleWindow),不回落到默认值(字段仅作历史兼容)。
 func (d DispatchSettings) ApplyDefaults() DispatchSettings {
-	// if d.DebounceSeconds <= 0 { d.DebounceSeconds = DefaultDebounceSeconds }
-	// if d.MaxBatchCount <= 0 { d.MaxBatchCount = DefaultMaxBatchCount }
-	// if d.MaxBatchChars <= 0 { d.MaxBatchChars = DefaultMaxBatchChars }
-	// if d.KvTTLMinutes <= 0 { d.KvTTLMinutes = DefaultKvTTLMinutes }
-	// if d.CharRatio <= 0 { d.CharRatio = DefaultCharRatio }
-	// return d
-	return d // TODO(实现):见函数注释
+	if d.MaxBatchCount <= 0 {
+		d.MaxBatchCount = DefaultMaxBatchCount
+	}
+	if d.MaxBatchChars <= 0 {
+		d.MaxBatchChars = DefaultMaxBatchChars
+	}
+	if d.KvTTLMinutes <= 0 {
+		d.KvTTLMinutes = DefaultKvTTLMinutes
+	}
+	if d.CharRatio <= 0 {
+		d.CharRatio = DefaultCharRatio
+	}
+	return d
 }

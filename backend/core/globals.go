@@ -45,11 +45,11 @@ var LocalToken string
 
 // DataDir:数据根目录。结构:
 //
-//	{DataDir}/qingban.db  SQLite 主库
-//	{DataDir}/secret.key  密钥文件(API Key 加密用 AES-256-GCM,见 utils/secret.go)
-//	{DataDir}/token.txt   本地访问令牌
-//	{DataDir}/files/      附件根目录({DataDir}/files/{fileId},见 model/file.go)
-//   {DataDir}/logs/       logrus 日志文件(可选,见 cfg.LogToFile)
+//		{DataDir}/qingban.db  SQLite 主库
+//		{DataDir}/secret.key  密钥文件(API Key 加密用 AES-256-GCM,见 utils/secret.go)
+//		{DataDir}/token.txt   本地访问令牌
+//		{DataDir}/files/      附件根目录({DataDir}/files/{fileId},见 model/file.go)
+//	  {DataDir}/logs/       logrus 日志文件(可选,见 cfg.LogToFile)
 var DataDir string
 
 // StartTime:进程启动时刻(UTC)。

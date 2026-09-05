@@ -36,17 +36,15 @@ type Group struct {
 	Initial string `json:"initial" gorm:"size:4"`
 	// Announcement:群公告/群聊目的与调度说明。
 	Announcement *string `json:"announcement,omitempty" gorm:"type:text"`
-	// Strategy:调度策略(JSON 配置值)。
+	// Strategy:调度策略(JSON 配置值;冷却等运行态经 core.Mem 缓存,见 AI 引擎注释)。
 	Strategy GroupStrategy `json:"strategy" gorm:"type:text;serializer:json"`
-	// LastRoundAt:最近一次轮次触发时刻(冷却判断用)。
-	LastRoundAt *time.Time `json:"last_round_at,omitempty"`
 
 	// Conversation:该群的会话(一对一;创建群时由服务层同步建行)。
 	Conversation *Conversation `json:"-" gorm:"foreignKey:GroupID"`
 	// Members:群成员(读取预载用;加/移成员请写 GroupMember 行;对外输出经服务层 memberIds)。
 	Members []Companion `json:"-" gorm:"many2many:group_members;"`
-	// Rounds:群的历史轮次。
-	Rounds []Round `json:"-" gorm:"foreignKey:GroupID"`
+	// 注:早期 LastRoundAt/Rounds(轮次表)已移除——轮次为运行期易失态,见 core/cache.go;
+	// 旧库遗留列 last_round_at 与 rounds/round_speakers 表由迁移脚本 DROP(见 init/app.go)。
 }
 
 // GroupMember:群成员关系行(复合主键 = 群 + 成员,带各自入群时间)。

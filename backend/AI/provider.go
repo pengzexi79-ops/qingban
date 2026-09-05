@@ -62,7 +62,7 @@ type ChatResult struct {
 
 // Client:某条模型配置对应的协议客户端(每次真实调用构建,不常驻避免密钥滞留)。
 type Client struct {
-	// Profile:使用的模型配置行(model_configs;仅调用生命周期内引用)。
+	// Profile:调用的 API 配置行(api_configs;仅调用生命周期内引用)。
 	Profile *model.APIConfig
 	// SecretKey:解密后的明文密钥(用完即弃;空=本地模型无密钥)。
 	SecretKey string

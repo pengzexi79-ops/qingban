@@ -6,6 +6,8 @@ package server
 // 浏览器调试模式(core.Cfg.AllowEmptyToken)可留空。日后若引入云账号,
 // 令牌头之上再叠加登录态,接口面不变。
 // 伪代码草稿:中间件闭包内为逻辑占位;实现时恢复 import(qingban/core、qingban/utils 等)。
+// ⚠ 实现红线:当前三个中间件为"空闭包占位"——落地时必须先调 c.Next() 放行请求链
+// (空闭包会让路由直接断链),校验失败再 abortErr(c, …);幂等中间件见下方注释顺序。
 
 import (
 	"strings"

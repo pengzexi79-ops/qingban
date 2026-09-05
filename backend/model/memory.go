@@ -44,8 +44,6 @@ type Memory struct {
 	Date string `json:"date" gorm:"size:16"`
 	// Source:来源说明("手动添加/你告诉我的/自动提取"等)。
 	Source string `json:"source" gorm:"size:200"`
-	// Importance:重要度 0~1(默认 0.5,影响注入排序)。
-	Importance float64 `json:"importance" gorm:"type:real;default:0.5"`
 	// Status:candidate/confirmed。
 	Status string `json:"status" gorm:"size:16;index;default:confirmed"`
 	// EmbeddingStatus:pending/indexed/failed。

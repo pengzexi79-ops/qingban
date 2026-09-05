@@ -2,11 +2,13 @@ package model
 
 // AI 好友/角色:表 companions。
 // 关系:一对一会话(conversation,companion_id 唯一);头像引用文件登记表(可空);
-// 绑定模型配置(model_config_id,可空=默认本地配置)。
+// 每个角色"独自引用一个 API":绑定 api_configs 行(APIConfigID,可空=回落默认配置),可各自不同;
 // 人设/记忆设置/聊天风格/批次调度/主动陪伴/能力开关为"整块配置值"(serializer:json),
 // 不是关系;未读/置顶/记忆条数等列表派生字段不入库(服务层组装)。
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+)
 
 // Persona:角色人设(基础资料,全部自由文本,注入系统提示)。
 type Persona struct {
@@ -91,10 +93,10 @@ type Companion struct {
 	Category string `json:"category" gorm:"size:50"`
 	// Tagline:一句话介绍(列表副标题)。
 	Tagline string `json:"tagline" gorm:"size:120"`
-	// FileID:头像文件引用(files.id,可空)。
+	// FileID:头像文件引用(files.id,可空;指针语义与 User.FileID/Group.FileID 一致)。
 	FileID *uint `json:"file_id,omitempty" gorm:"index"`
-	// ModelConfigID:绑定模型配置(model_configs.id;空=默认本地配置)。
-	ModelConfigID *uint `json:"model_config_id,omitempty" gorm:"index"`
+	// APIConfigID:该角色独自引用的 API 配置(api_configs.id;空=回落默认配置)。
+	APIConfigID *uint `json:"api_config_id,omitempty" gorm:"index"`
 
 	// 下列为整块配置值(JSON 序列化存储,非关系):
 	Persona        Persona          `json:"persona" gorm:"type:text;serializer:json"`
@@ -104,6 +106,8 @@ type Companion struct {
 	Proactive      ProactiveConfig  `json:"proactive" gorm:"type:text;serializer:json"`
 	Capabilities   Capabilities     `json:"capabilities" gorm:"type:text;serializer:json"`
 
+	// APIConfig:绑定的 API 配置行(关联;配置删除后本角色绑定置空)。
+	APIConfig *APIConfig `json:"-" gorm:"foreignKey:APIConfigID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 	// Conversation:该角色的单聊会话(一对一;创建角色时由服务层同步建行)。
 	Conversation *Conversation `json:"-" gorm:"foreignKey:CompanionID"`
 

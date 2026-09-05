@@ -23,10 +23,10 @@ var BuildTime = ""
 // 说明:端口顺延后由 init 在运行时回写此变量,使壳与日志拿到最终地址。
 var ExternalAPI = ""
 
-//服务器地址
+// 服务器地址
 var SeverHost = ""
 
-//前端地址
+// 前端地址
 var AppHost = ""
 
 var Mode = ""

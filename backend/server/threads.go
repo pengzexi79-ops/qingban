@@ -5,6 +5,9 @@ package server
 // 联回 companions/groups 实体取名称/头像/成员;排序:置顶优先 → last_active_at 倒序。
 // 消息/未读/置顶/静音状态都只在会话行上,不再有"主键即业务 id"的旧缓存行。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位。
+// v2 注记:会话定位一律用 conversations.id(数字);ThreadView.id=会话行 id、type 由
+// companion_id/group_id 归属推断(旧契约 Thread.id=companionId/groupId、conversationId
+// 即归属 id 的语义已废弃——翻页/消息端点路径参数同源,勿混用)。
 
 import (
 	"github.com/gin-gonic/gin"
@@ -82,15 +85,17 @@ func hListConversations(c *gin.Context) {
 	// case "unread":    tx = tx.Where("unread > 0")
 	// }
 	// if q.Q != "" { tx = tx.Where("last_content LIKE ? OR id IN (实体名匹配的会话子查询)", ...) }
-	// rows := tx.Order("pinned DESC, last_active_at DESC, id DESC").
-	//            Where("last_active_at < (?) OR (last_active_at = (?) AND id < ?)", 游标条件...).
-	//            Limit(limit + 1).Find(&[]model.Conversation{})            // 多取 1 判 hasMore
-	// entities := loadCompanionsAndGroups(rows)                           // ② 批量加载实体(名称/头像/成员数)
-	// for _, row := range rows {                                          // ③ 组装 ThreadView
-	//     v := threadViewOf(row, entities[row.id])
+	// // ② 排序:置顶优先 → last_active_at 倒序 → id 倒序;游标稳定条件取
+	// //    (last_active_at, id) 字典序小于上页末行(单列 before=id 无法表达置顶段,
+	// //     实现按行序整体游标,见 common/page.go KeysetIDCond 参考)
+	// rows := tx.Order("pinned DESC, last_active_at DESC, id DESC").Limit(limit + 1).Find(&[]model.Conversation{})
+	// entities := loadCompanionsAndGroups(rows)                           // ③ 批量加载实体(名称/头像/成员数)
+	// for _, row := range rows {                                          // ④ 组装 ThreadView
+	//     v := threadViewOf(row, entities[row.ID])
 	//     out = append(out, v)
 	// }
 	// respond(c, 200, Page[ThreadView]{Items: out, NextCursor: hasMore ? last(rows).ID : 0})
+	// // NextCursor=数字 id(上页末行 id);旧契约 before 字符串游标语义由 DTO 层负责
 }
 
 // threadViewOf:会话行 + 实体 → ThreadView 组装内核(列表/详情/搜索共用)。

@@ -9,6 +9,7 @@ import (
 )
 
 // apiVersion:对外暴露的 API 版本(与 openapi.phase1.yaml version 对齐)。
+// 注:文档重写为 openapi v2 时,本常量与 /health 的 apiVersion 同步 bump(建议 1.0.0)。
 const apiVersion = "0.2.0-phase1"
 
 // Health:GET /health 响应体(契约 schema)。
@@ -44,7 +45,8 @@ type BootstrapCounts struct {
 type BootstrapResp struct {
 	// FirstRun:true=显示首次引导;false=直接进主界面。
 	FirstRun bool `json:"firstRun"`
-	// UserID:当前用户 id(数字直出;未初始化时省略)。
+	// UserID:当前用户 id(users.id 数字直出;未初始化时省略)。
+	// v2 注记:旧契约 userId 为字符串 uuid,现为数字主键(与全部 id 语义一致)。
 	UserID *uint `json:"userId,omitempty"`
 	// DataVersion:数据版本(未初始化时省略)。
 	DataVersion string `json:"dataVersion,omitempty"`
@@ -78,20 +80,22 @@ func hPostBootstrapInit(c *gin.Context) {
 	// if kvGet(model.KVBootstrapDone) == "1" { respondErr(409, CodeConflict, "本地空间已初始化"); return }
 	// tx {
 	//     db.Create(&model.User{Nickname: "我", Settings: defaultSettings})   // ① 单行用户(id 自增=1)
-	//     seed := model.ModelConfig{Name: "local-ollama", DisplayName: "本地模型(Ollama)",
+	//     seed := model.APIConfig{Name: "local-ollama", DisplayName: "本地模型(Ollama)",
 	//         BaseURI: "http://localhost:11434/v1", APIType: "ollama",        // ② 种子配置
 	//         TextCompletion: true, Temperature: 0.7}
 	//     db.Create(&seed)
-	//     kvSet(model.KVDefaultModelConfigID, 数值/文本(seed.ID))            // 默认配置引用
+	//     kvSet(model.KVDefaultAPIConfigID, 数值/文本(seed.ID))            // 默认配置引用
 	//     if req.Mode == "import-demo" {                               // ③ 演示数据迁移(内核见 data.go)
 	//         if req.ImportPayload == nil { 422 "缺少导入文件"; rollback }
 	//         stats = importPayloadCore(req.ImportPayload)             // 不写迁移 kv
 	//     }
-	//     kvSet(model.KVBootstrapDone, "1"); kvSet(model.KVDataVersion, "qingban_api_v1")
+	// kvSet(model.KVBootstrapDone, "1"); kvSet(model.KVDataVersion, "qingban_api_v1")
 	// }
 	// hub.Publish(EventSettingsChanged, {scope: "bootstrap"})          // ④ 已订阅前端刷新
 	// respond(c, 200, {userId: firstUser().ID, dataVersion: "qingban_api_v1",
-	//     importStats: stats?, defaultModelConfigId: seed.ID})
+	//     importStats: stats?, defaultApiConfigId: seed.ID})
+	// v2 注记:默认配置字段名 defaultApiConfigId(数字;旧契约 BootstrapResult.defaultApiProfileId
+	// 与 /api-profiles 一并废弃);初始化幂等:二次调用 409(CONFLICT)。
 }
 
 // hSSEEvents:GET /events —— 本地实时事件订阅(SSE 长连接)。

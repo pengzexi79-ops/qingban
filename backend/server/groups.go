@@ -1,12 +1,15 @@
 package server
 
-// P3 群聊端点:群 CRUD、成员管理、手动触发一轮(第一阶段"同步执行一轮")。
-// 分工:轮次调度(冷却/选人/逐成员调用/落库/广播)整体在 AI 包 RunGroupRound,
+// P3 群聊端点:群 CRUD、成员管理、手动触发一轮(交棒 AI 包调度引擎)。
+// 分工:回合触发(冷却/点名全员/逐成员调用/广播)整体在 AI 包 RunGroupRound(易失态,不落库),
 // 本文件只做 HTTP 校验与入参组装。
 // 建表语义(v3):创建群 → 同事务落 groups 行 + group_members 行(JoinedAt)+ 一行群会话
-// (Conversation{GroupID: &group.ID});解散群 → 删 groups 行,会话/消息/点名/轮次/发言
-// 经外键级联清理(如需归档请先 /data/export 再删)。
+// (Conversation{GroupID: &group.ID});解散群 → 删 groups 行,群会话/消息/点名/附件关系
+// 经外键级联清理(如需归档请先 /data/export 再删;运行态回合随进程消失)。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位(实现时按需恢复 import)。
+// v2 注记:Group 出参键 avatarFileId/createdAt 等由视图映射(实体 json 为 file_id);
+// strategy.enabled 契约默认 true,而 model.GroupStrategy 零值为 false——落库前显式回落契约缺省,
+// 勿依赖 Go 零值(手动"触发一轮"不受 enabled 限制,其仅约束主动起话题任务)。
 
 import (
 	"github.com/gin-gonic/gin"
@@ -55,8 +58,9 @@ func hCreateGroup(c *gin.Context) {
 	// var req GroupCreateReq; if !bind(c, &req) { return }
 	// for _, id := range req.MemberIds { if !companionExists(id) { respondErr(422, "成员不存在"); return } }
 	// group := model.Group{Name: req.Name,                               // 默认补齐;ID 自增不赋
-	//     Initial: firstRune(req.Name), Color: paletteHash(req.Name),
-	//     FileID: req.FileID, Announcement: req.Announcement, Strategy: defaultStrategy(req.Strategy)}
+	//     Initial: firstRune(req.Name), Color: req.Color 或 paletteHash(req.Name),
+	//     FileID: req.FileID, Announcement: req.Announcement,
+	//     Strategy: defaultStrategy(req.Strategy)}                        // 子键零值回落契约缺省
 	// tx {
 	//     db.Create(&group)
 	//     rows := 每组员 = model.GroupMember{GroupID: group.ID, CompanionID: id, JoinedAt: now}
@@ -65,6 +69,8 @@ func hCreateGroup(c *gin.Context) {
 	// }
 	// hub.Publish(EventThreadsChanged, {})
 	// respond(c, 201, groupWithMembers(group))
+	// v2 注记:strategy 必填(契约);子键缺省 random/30/2/member-order、enabled 默认 true
+	// (模型零值为 false,见文件头 v2 注记;defaultStrategy 负责回落)。
 }
 
 // hGetGroup:GET /groups/:groupId —— 群详情(含成员)。
@@ -99,7 +105,7 @@ func hPatchGroup(c *gin.Context) {
 
 // hDeleteGroup:DELETE /groups/:groupId —— 解散群(204)。
 // 级联(单事务):groups 行删除 → conversations(群会话)→ messages/点名/附件关系/
-// rounds→round_speakers/group_members 由外键级联清理。要归档的群先 /data/export 再删。
+// group_members 由外键级联清理。要归档的群先 /data/export 再删。
 func hDeleteGroup(c *gin.Context) {
 	// id := parseUintParam(c, "groupId")
 	// group := db.First(&model.Group{}, id); if nil { 404 }
@@ -109,9 +115,10 @@ func hDeleteGroup(c *gin.Context) {
 }
 
 // GroupMembersReq:POST /groups/:groupId/members 请求体。
+// 注:契约对添加接口仅约束 min=1(建群上限 20 只约束创建,见 GroupCreateReq;群规模上限不在此限)。
 type GroupMembersReq struct {
 	// MemberIds:新增角色(已在群内者忽略)。
-	MemberIds []uint `json:"memberIds" binding:"required,min=1,max=20"`
+	MemberIds []uint `json:"memberIds" binding:"required,min=1"`
 }
 
 // hAddGroupMembers:POST /groups/:groupId/members —— 添加成员(已在内者忽略)。
@@ -136,24 +143,23 @@ func hRemoveGroupMember(c *gin.Context) {
 	// respond(c, 204)
 }
 
-// hListGroupRounds:GET /groups/:groupId/rounds —— 轮次记录(rounds 行,触发时刻倒序分页)。
-func hListGroupRounds(c *gin.Context) {
-	// id := parseUintParam(c, "groupId")
-	// if !groupExists(id) { respondErr(404, "群不存在"); return }
-	// rows := db.Where("group_id = ?", id).Order("triggered_at DESC").Find(&[]model.Round{})  // 分页
-	// respond(c, 200, Page[model.Round]{items: rows, nextCursor: ...})
-}
-
-// hTriggerGroupRound:POST /groups/:groupId/rounds —— 触发一轮(同步执行,201)。
+// hTriggerGroupRound:POST /groups/:groupId/rounds —— 触发一轮(运行期动态回合,201)。
+// 语义:轮次不落库(易失,见 core/cache.go key=round:<convID>);本端点只做 HTTP 校验,
+// 交棒 AI.RunGroupRound——其内部完成:剔除已删角色(成员<2→错误)、冷却检查
+// (COOLDOWN_ACTIVE→409)、写易失现场(round:<convID>)并交棒 Dispatcher.FlushConversation
+// (点名全员立即整批投喂);回复过程经装配层 hooks 推送 round_start/round_message/new_message/
+// round_end SSE;回合现场回复完成即删(无历史回放接口)。幂等中间件防重放。
 func hTriggerGroupRound(c *gin.Context) {
 	// id := parseUintParam(c, "groupId")
 	// group := db.Preload("Conversation").First(&model.Group{}, id); if nil { 404 }
-	// members := loadEnabledMembers(group)                               // 剔除已删角色
-	// if len(members) < 2 { respondErr(422, "可用成员不足 2 人"); return }
 	// if group.Conversation == nil { respondErr(409, "群会话不存在"); return }
-	// userPrompt := bindJSON {prompt?}(可空;空=由调度选人起话题)
-	// result := ai.RunGroupRound(ctx, GroupRoundArgs{group, members, userPrompt,
-	//     ConversationID: group.Conversation.ID, now})                   // 会话 id = conversations.id(幂等已挡重放)
-	// // 错误映射:COOLDOWN_ACTIVE→409 / PROACTIVE_DISABLED→409 / PROVIDER_ERROR→502
-	// respond(c, 201, result)                                            // completed/cancelled(契约 201)
+	// result, err := ai.RunGroupRound(c.Request.Context(), ai.GroupRoundArgs{
+	//     Group: *group, Members: 群成员(Companion 全量,由调度引擎现读配置),
+	//     ConversationID: group.Conversation.ID,          // conversations.id(数字;非 group.id)
+	//     Now: time.Now()})
+	// // 错误映射:COOLDOWN_ACTIVE→409 / 成员不足→422(VALIDATION_ERROR)/ PROVIDER_ERROR→502
+	// if err != nil { respondErr(c, common.ToHTTPStatus(err)...); return }
+	// respond(c, 201, result)                            // *ai.RoundResult{roundId(进程内数字), status:"running"}
+	// v2 注记:契约 RoundResult.roundId 为数字(运行期进程内递增);消息经 round_message/new_message 事件,
+	// 响应内 messages 恒为空(异步)——与旧"同步执行一轮、messages 返回产出"的语义不同。
 }

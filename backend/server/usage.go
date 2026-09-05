@@ -3,6 +3,10 @@ package server
 // P2 用量端点:汇总 / 明细 / 近 N 日趋势(读 usage_records 本地真实数据)。
 // 原则(BACKEND_HANDOFF §6.7):API 损耗页读后端真实用量,不以前端估算作账单。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位(实现时按需恢复 import)。
+// v2 注记:UsageRecord 出参键驼峰(usageId/conversationId/companionId/inputTokens…),
+// 实体 json 为蛇形(conversation_id/id…)——明细页 items 须经视图映射;契约"usageId"
+// 即实体数字主键 id(旧 uuid 别名语义废弃);usage/trend 与 summary 按本地时区按日聚合
+// (SQLite date() 默认 UTC,需 datetime(created_at,'localtime') 或按偏移折算)。
 
 import (
 	"github.com/gin-gonic/gin"

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"qingban/core"
 	"qingban/model"
 )
 
@@ -89,8 +90,7 @@ type DispatchHooks struct {
 
 // DispatchSettingsOf:取角色批次配置(零值回落 model.DispatchSettings 缺省常量)。
 func DispatchSettingsOf(c model.Companion) model.DispatchSettings {
-	// return c.Dispatch.ApplyDefaults()          // ApplyDefaults 实现后启用
-	return model.DispatchSettings{} // TODO(实现)
+	return c.Dispatch.ApplyDefaults() // 缺省值见 model/dispatch.go Default* 常量
 }
 
 // ---- 纯决策/构建函数(签名先行,算法见注释;单测目标,实现顺序见文件尾注) ----
@@ -125,13 +125,11 @@ func MentionReaderIDs(memberIDs []uint, mentionAll bool, mentions []uint) (targe
 	return nil, false // TODO(实现):见函数注释 ①~③
 }
 
-// convDebounce:会话级静默窗 = 成员配置的最小值(最"想及时回"的成员定节奏)。
-// 说明:单聊即该成员自身配置;comps 缺行(未知成员)回落 model.DefaultDebounceSeconds。
-func convDebounce(comps map[uint]model.Companion, memberIDs []uint) time.Duration {
-	// best := model.DefaultDebounceSeconds
-	// for _, id := range memberIDs { if c, ok := comps[id]; ok { if s := cfg(c).DebounceSeconds; s>0 && s<best { best = s } } }
-	// return best * time.Second
-	return 0 // TODO(实现)
+// convDebounce:用户"输入完成"判定窗口。
+// 说明:统一取 core.IdleWindow(默认 2s,core 编译期可注入);角色级 DispatchSettings
+// DebounceSeconds 已不参与该判定(字段保留作历史兼容,见 model/dispatch.go 注记)。
+func convDebounce(_ map[uint]model.Companion, _ []uint) time.Duration {
+	return core.IdleWindow
 }
 
 // BuildBatchLines:未读批渲染为"一次性拼接文本"(设计 §2.2)。

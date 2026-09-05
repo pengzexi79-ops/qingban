@@ -4,6 +4,9 @@ package server
 // 数据行:users(单行,由 bootstrap 初始化创建);读写均经 service 层函数。
 // 注意:包级伪代码草稿,逻辑以函数体内伪代码注释占位(实现时按注释还原为真实语句,
 // 并按需恢复 import: qingban/common、qingban/core)。
+// v2 注记:UserProfile 出参键 userPersona/avatarFileId 等为驼峰视图;实体 json 为
+// user_persona/file_id(蛇形)——/me 与 /data/export 均须经视图映射;
+// avatarImage(base64)仅导入迁移期兼容字段,实体无此列。
 
 import (
 	"github.com/gin-gonic/gin"

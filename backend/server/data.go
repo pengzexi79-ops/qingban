@@ -1,9 +1,15 @@
 package server
 
 // P1 数据迁移端点:导出 / 导入(兼容 API 格式与前端演示格式)/ 清空。
-// 语义:导出=整库 JSON 快照(apiProfiles 脱敏,附件只记 fileId);
+// 语义:导出=整库 JSON 快照(apiConfigs 脱敏,附件只记 fileId);
 // 导入=按 id 去重合并;清空=confirm=true 全删。
 // 伪代码草稿:逻辑以函数体内伪代码注释占位(实现时按需恢复 import)。
+// v2 注记(ExportData 形状与旧契约差异,重写文档时对齐本文件结构体):
+//   - 新增段:users/APIConfigs/groups/groupMembers/conversations/Messages(平铺数组,
+//     旧契约 messages 为 conversationId→[] 分组、settings 为 UserSettings、apiProfiles 字段均废弃);
+//   - 关系段(MessageFiles/MessageMentions/MemberCursors/ShortMemories)整库可恢复;
+//   - FilesManifest 为数字 fileId 清单(二进制随 dataDir 备份,不做内容内嵌);
+//   - Settings 为 config_kvs 解密后的明文"键→值"视图(密钥/敏感键不导出);
 
 import (
 	"github.com/gin-gonic/gin"
@@ -13,7 +19,7 @@ import (
 
 // ExportData:GET /data/export 响应体(openapi ExportData)。
 // 快照语义(v3):主实体(users/companions/groups/memories/configs)+ 会话行 +
-// 各关系表(message_files/message_mentions/group_members/rounds/round_speakers/
+// 各关系表(message_files/message_mentions/group_members/
 // member_cursors/chat_short_memories)整库可恢复;附件二进制随数据目录整体备份,清单只列 id。
 type ExportData struct {
 	// Version:本格式版本(qingban_api_v1;旧品牌兼容命名)。
@@ -22,8 +28,8 @@ type ExportData struct {
 	ExportedAt string `json:"exportedAt"`
 	// User:用户资料。
 	User *model.User `json:"user,omitempty"`
-	// ModelConfigs:模型配置(脱敏:APIKey 已置空)。
-	ModelConfigs []model.APIConfig `json:"modelConfigs,omitempty"`
+	// APIConfigs:API 配置(脱敏:APIKey 已置空)。
+	APIConfigs []model.APIConfig `json:"apiConfigs,omitempty"`
 	// Companions:角色全量(不含派生字段)。
 	Companions []model.Companion `json:"companions,omitempty"`
 	// Groups:群全量(成员关系走 GroupMembers)。
@@ -37,10 +43,7 @@ type ExportData struct {
 	// MessageFiles/MessageMentions:消息附件/点名关系。
 	MessageFiles    []model.MessageFile    `json:"messageFiles,omitempty"`
 	MessageMentions []model.MessageMention `json:"messageMentions,omitempty"`
-	// Rounds/RoundSpeakers:轮次与发言明细。
-	Rounds        []model.Round        `json:"rounds,omitempty"`
-	RoundSpeakers []model.RoundSpeaker `json:"roundSpeakers,omitempty"`
-	// MemberCursors/ShortMemories:已读水位与短期记忆。
+	// MemberCursors/ShortMemories:已读水位与短期记忆(运行态轮次不落库,不在导出范围)。
 	MemberCursors []model.MemberCursor `json:"memberCursors,omitempty"`
 	ShortMemories []model.ShortMemory  `json:"shortMemories,omitempty"`
 	// Memories:长期记忆全量。
@@ -62,12 +65,12 @@ func hExportData(c *gin.Context) {
 	// out.Messages = db.Order("id").Find(&[]model.Message{})
 	// out.MessageFiles = db.Find(&[]model.MessageFile{})
 	// out.MessageMentions = db.Find(&[]model.MessageMention{})
-	// out.Rounds = db.Find(&[]model.Round{}); out.RoundSpeakers = db.Find(&[]model.RoundSpeaker{})
+	// (运行态轮次/回合现场不入库,见 core/cache.go)
 	// out.MemberCursors = db.Find(&[]model.MemberCursor{}); out.ShortMemories = db.Find(&[]model.ShortMemory{})
 	// out.Memories = db.Find(&[]model.Memory{})
-	// cfgs := db.Find(&[]model.ModelConfig{})                            // ① 脱敏:
+	// cfgs := db.Find(&[]model.APIConfig{})                            // ① 脱敏:
 	// for i := range cfgs { cfgs[i].APIKey = "" }                        // 永不含 key 密文
-	// out.ModelConfigs = cfgs
+	// out.APIConfigs = cfgs
 	// db.Model(&model.File{}).Pluck("id", &out.FilesManifest)            // 附件二进制随 dataDir 备份
 	// out.Settings = kvDump(排除:密钥/敏感键)                              // config_kvs 明文视图
 	// respond(c, 200, out)
@@ -97,11 +100,11 @@ func hImportData(c *gin.Context) {
 // 依赖序(v3 快照段,见 ExportData):
 //
 //	a) users:已有则取较新(nickname/settings 覆盖;幂等跳过)
-//	b) modelConfigs:脱敏占位导入(无密钥;恢复默认配置引用)+ config_kvs 明文段
+//	b) apiConfigs:脱敏占位导入(无密钥;恢复默认配置引用)+ config_kvs 明文段
 //	c) companions(自增重映射 old→new)→ groups → group_members(joined_at)
 //	d) conversations:companion_id/group_id 按映射重指向;缺失的按归属补建
 //	e) messages:重映射 conversation_id;先建行再重建 message_files/message_mentions(校验存在)
-//	f) rounds→round_speakers(消息 id 重映射);memories(companion 悬挂→置空转全局)
+//	f) memories(companion 悬挂→置空转全局)
 //	g) member_cursors/chat_short_memories:会话/成员重映射后插入
 //	h) 前端演示格式(v4/v3/v2)在版本归一器内逐版本映射到上述段(样例见 frontend/js/store.js)
 func importPayloadCore(payload map[string]any, version string) ImportStats {
@@ -133,9 +136,10 @@ type ImportCounts struct {
 func hClearData(c *gin.Context) {
 	// if c.Query("confirm") != "true" { respondErr(400, "需 confirm=true"); return }
 	// tx { 按依赖序清空(先子后父或直接按表删,SQLite 外键级联生效下可只删主实体):
-	//     model_configs/companions/groups(级联 group_members/group 会话及其消息链/
-	//     rounds/memories 等)/conversations(遗留孤儿)/messages 兜底/memories 兜底/
+	//     api_configs/companions/groups(级联 group_members/group 会话及其消息链/
+	//     memories 等/conversations(遗留孤儿)/messages 兜底/memories 兜底/
 	//     files/usage_records/member_cursors/chat_short_memories }
+	// truncate 向量表(memory_vectors)与 FTS 影子表(fts_memories/fts_messages)  // 非外键,显式清
 	// os.RemoveAll({DataDir}/files)                                       // 附件随业务清除(提示先导出)
 	// // 保留:users 与 config_kvs(bootstrap done 标记)→ 不回引导页,资料与设置仍在
 	// //       (语义分歧点:如需"彻底重置"走未来 DELETE /me,注释供评审)
