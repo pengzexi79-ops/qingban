@@ -39,4 +39,12 @@ git diff --check：通过（已检查暂存区与未暂存区；未跟踪文件�
 
 ## 风险、未完成与交接
 
-交给 backend-lead：审核共享前端热点文件和产品入口是否符合当前技术方案；后续将新增/删除操作替换为正式 API 与数据同步。当前未执行 commit、push 或 PR。
+交给 backend-lead：审核共享前端热点文件和产品入口是否符合当前技术方案；后续将新增/删除操作替换为正式 API 与数据同步。
+
+## 提交与协作状态
+
+- commit：`b374414`（`feat(frontend): add mobile conversation actions`）
+- 远程分支：`origin/codex/fe-exp/QB-MOBILE-001`
+- Pull Request：[#3 feat(frontend): mobile-first conversation actions](https://github.com/pengzexi79-ops/qingban/pull/3)
+- 目标分支：`master`（仓库实际默认分支；规范示例中的 `main` 在本仓库不存在）
+- 当前状态：已推送，等待审核人审核；审核通过后由审核人执行 **Squash and merge**。
