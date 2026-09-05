@@ -1,64 +1,61 @@
 package model
 
-// 用量记录实体:usage_records 表。
-// 语义(PHASE1 §6/P2):每次模型调用真实落一条(本地记账,不分析也可对账);
-// "API 消耗诊断"页改读本表统计,不再用前端估算。Ollama 本地模型仅记 token,费用为 0。
+// 用量账本:usage_records。每次模型调用真实落一条(本地记账/诊断对账)。
+// 注:结构字段 Model 与嵌入类型名冲突,故不整体嵌入 gorm.Model,
+// 时间戳/软删字段显式声明(主键仍为数字自增)。
 
-import "time"
+import (
+	"time"
 
-// CapabilityName:用量/能力维度的标识常量(记录调用的是哪类模型能力)。
-const (
-	// CapChat:对话。
-	CapChat = "chat"
-	// CapVision:视觉理解。
-	CapVision = "vision"
-	// CapHearing:听觉/ASR。
-	CapHearing = "hearing"
-	// CapTTS:语音合成。
-	CapTTS = "tts"
-	// CapVoiceClone:声音复刻。
-	CapVoiceClone = "voiceClone"
-	// CapVideo:视频理解。
-	CapVideo = "video"
-	// CapImage:文生图。
-	CapImage = "image"
-	// CapEmbedding:向量化(记忆索引/召回)。
-	CapEmbedding = "embedding"
+	"gorm.io/gorm"
 )
 
-// UsageRecord:一次模型调用的用量明细。表:usage_records。
-type UsageRecord struct {
-	// ID:用量记录 id(可读前缀 usage-;AI 消息 usageId 指向本字段)。
-	ID string `json:"usageId" gorm:"primaryKey;column:id"`
-	// Provider:服务商标识(openai/anthropic/ollama/qwen/custom)。
-	Provider string `json:"provider"`
-	// Model:实际调用模型 id。
-	Model string `json:"model"`
-	// Capability:chat/vision/hearing/tts/voiceClone/video/image/embedding 等。
-	Capability string `json:"capability" gorm:"index"`
-	// ConversationID:所属会话(单聊消息场景有值;可为空=能力调用)。
-	ConversationID *string `json:"conversationId,omitempty" gorm:"column:conversation_id"`
-	// CompanionID:服务角色(群聊里属于某角色调用)。
-	CompanionID *string `json:"companionId,omitempty" gorm:"column:companion_id"`
-	// APIProfileID:使用的模型配置(指向 model_configs.ID,审计与对账维度)。
-	APIProfileID uint `json:"apiProfileId" gorm:"column:api_profile_id"`
-	// InputTokens/OutputTokens/CachedTokens:输入/输出/缓存 token(供应商回传;缺失为 0)。
-	InputTokens  int `json:"inputTokens" gorm:"column:input_tokens"`
-	OutputTokens int `json:"outputTokens" gorm:"column:output_tokens"`
-	CachedTokens int `json:"cachedTokens" gorm:"column:cached_tokens"`
-	// LatencyMs:调用总耗时毫秒(首字节/全量,按能力记录口径)。
-	LatencyMs int64 `json:"latencyMs" gorm:"column:latency_ms"`
-	// Status:success/failed(失败也记录,便于诊断与重试统计)。
-	Status string `json:"status"`
-	// EstimatedCost:估算费用(仅远程服务商计费,Ollama 为 0)。
-	EstimatedCost float64 `json:"estimatedCost" gorm:"column:estimated_cost"`
-	// ProviderRequestID:供应商侧请求 id(排障引用;失败时记错误类目)。
-	ProviderRequestID string `json:"-" gorm:"column:provider_request_id"`
-	// ErrorCode:失败时的类目(如 PROVIDER_ERROR/超时;成功为空)。
-	ErrorCode string `json:"-" gorm:"column:error_code"`
-	// CreatedAt:记录时间(按日聚合趋势的分桶依据)。
-	CreatedAt time.Time `json:"createdAt" gorm:"index"`
-}
+// CapabilityName:能力维度标识(记录调用的是哪类模型能力)。
+const (
+	CapChat       = "chat"       // 对话
+	CapVision     = "vision"     // 视觉理解
+	CapHearing    = "hearing"    // 听觉/转写
+	CapTTS        = "tts"        // 语音合成
+	CapVoiceClone = "voiceClone" // 声音复刻
+	CapVideo      = "video"      // 视频理解
+	CapImage      = "image"      // 文生图
+	CapEmbedding  = "embedding"  // 向量化
+)
 
-// TableName:表名(usage_records)。
-func (UsageRecord) TableName() string { return "usage_records" }
+// UsageRecord:一次模型调用的用量明细。
+type UsageRecord struct {
+	// ID:主键(自增)。
+	ID uint `json:"id" gorm:"primaryKey"`
+	// CreatedAt:记录时间(按日聚合的分桶依据;建议迁移补 created_at 索引)。
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt:最近更新。
+	UpdatedAt time.Time `json:"-"`
+	// DeletedAt:软删标记。
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	// Provider:服务商标识(openai/anthropic/ollama/qwen/custom)。
+	Provider string `json:"provider" gorm:"size:32;not null"`
+	// Model:实际调用模型 id。
+	Model string `json:"model" gorm:"size:128;not null"`
+	// Capability:chat/vision/hearing/tts/voiceClone/video/image/embedding。
+	Capability string `json:"capability" gorm:"size:24;index"`
+	// ConversationID:归属会话(conversations.id;可空=能力调用)。
+	ConversationID *uint `json:"conversation_id,omitempty" gorm:"index"`
+	// CompanionID:服务角色(companions.id;可空)。
+	CompanionID *uint `json:"companion_id,omitempty" gorm:"index"`
+	// ModelConfigID:使用的模型配置(model_configs.id;可空)。
+	ModelConfigID *uint `json:"model_config_id,omitempty" gorm:"index"`
+	// InputTokens/OutputTokens/CachedTokens:输入/输出/缓存 token。
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	CachedTokens int `json:"cached_tokens"`
+	// LatencyMs:调用总耗时毫秒。
+	LatencyMs int64 `json:"latency_ms"`
+	// Status:success/failed(失败也记录,便于诊断)。
+	Status string `json:"status" gorm:"size:16;not null"`
+	// EstimatedCost:估算费用(仅远程计费服务商,Ollama 为 0)。
+	EstimatedCost float64 `json:"estimated_cost" gorm:"type:real;default:0"`
+	// ProviderRequestID:供应商侧请求 id(排障)。
+	ProviderRequestID string `json:"-" gorm:"size:255"`
+	// ErrorCode:失败类目(如 PROVIDER_ERROR/超时;成功为空)。
+	ErrorCode string `json:"-" gorm:"size:64"`
+}

@@ -16,8 +16,8 @@ import (
 type RecallQuery struct {
 	// Query:用户当前消息/检索原文(≤500)。
 	Query string
-	// CompanionID:限定角色(空=全角色含全局记忆)。
-	CompanionID string
+	// CompanionID:限定角色(companions.id;nil=全角色含全局记忆)。
+	CompanionID *uint
 	// TopK:返回条数上限(默认 8,最大 50)。
 	TopK int
 	// Threshold:相似度阈值(默认 0.65;keyword 为折算分阈值)。

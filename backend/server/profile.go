@@ -27,7 +27,7 @@ type UserUpdateReq struct {
 func hGetMe(c *gin.Context) {
 	// user, err := userRepo.GetFirst()        // users 表单行
 	// if errors.Is(err, ErrNoRow) { return respondErr(500, "本地空间未初始化") }
-	// respond(c, 200, user)                   // settings 随行输出;avatarImage 仅迁移期保留
+	// respond(c, 200, user)                   // settings 随行输出;旧演示数据的 avatarImage 兼容在导入归一器
 }
 
 // hPatchMe:PATCH /me —— 分段更新资料/设置。
@@ -41,8 +41,7 @@ func hPatchMe(c *gin.Context) {
 	//     mergeSettings(&user.Settings, *req.Settings)                // 键级深合并:
 	//                                                                 // 顶层同名子键覆盖 + advanced/backup/globalCapabilities 递归合并
 	// }
-	// user.UpdatedAt = nowUTC()
-	// userRepo.Save(&user)
+	// userRepo.Save(&user)                                            // UpdatedAt 由 gorm.Model 自动维护
 	// hub.Publish(EventSettingsChanged, map{"scope": "me"})           // 前端"设置"页刷新
 	// respond(c, 200, user)
 }
@@ -52,8 +51,8 @@ func hPostMyAvatar(c *gin.Context) {
 	// file, err := c.FormFile("file"); if err != nil { return respondErr(422, "缺少文件") }
 	// if file.Size > 10MB { return respondErr(422, "头像需 ≤10MB") }
 	// ref := saveFileCore(file, FileKindImage, ScopeAvatar)           // 落盘+缩略图+files 行(见 files.go)
-	// user := userRepo.GetFirst(); user.AvatarFileID = &ref.FileID
-	// userRepo.Save(&user)                                            // 旧头像不自动删,交孤儿清理
+	// user := userRepo.GetFirst(); user.FileID = &ref.ID              // 数字 id;旧头像不自动删,交孤儿清理
+	// userRepo.Save(&user)
 	// respond(c, 200, ref)
 }
 
@@ -62,7 +61,7 @@ func hGetMyStats(c *gin.Context) {
 	// companionCount := db.Count(companions{})                       // 角色总数
 	// memoryCount    := db.Count(memories{})                         // 记忆总数
 	// today := localDate(now)                                        // 本地时区 YYYY-MM-DD
-	// todayMessages  := db.Count(messages{WHERE date(timestamp)=today})
+	// todayMessages  := db.Count(messages{WHERE date(created_at)=today})  // 时间序走 created_at(gorm.Model)
 	// favoriteCount  := 0                                            // 朋友圈收藏属推迟模块;第二阶段接 moments/saves
 	// respond(c, 200, MyStats{companionCount, memoryCount, favoriteCount, todayMessages})
 }

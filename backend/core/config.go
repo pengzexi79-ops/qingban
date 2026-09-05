@@ -14,17 +14,11 @@ type Config struct {
 	// Host:监听地址,默认 127.0.0.1(只允许本机;Wails 壳与浏览器同机)。
 	Host string
 
-	// Port:首选监听端口,默认 8080(契约约定);占用自动顺延,最终地址回写 ExternalAPI。
-	Port int
-
 	// DBPath:SQLite 路径,派生自 DataDir(默认 {DataDir}/qingban.db)。
 	DBPath string
 
 	// LogLevel:logrus 日志级别(debug/info/warn/error),默认 info;联调可设 debug 观察 SSE。
 	LogLevel string
-
-	// LogToFile:是否写文件日志(默认 true,{DataDir}/logs/app.log)。
-	LogToFile bool
 
 	// AllowEmptyToken:调试开关。true 时 X-Local-Token 缺失也放行(浏览器同源调试);
 	// 正式打包默认 false。见 server/middleware.go。
@@ -34,10 +28,8 @@ type Config struct {
 // DefaultConfig:返回默认配置(调用点:init.NewApp() 启动第一步)。
 func DefaultConfig() *Config {
 	return &Config{
-		Host:            "127.0.0.1",
-		Port:            8080,
+		Host:            AppHost,
 		LogLevel:        "info",
-		LogToFile:       true,
 		AllowEmptyToken: false,
 		// DataDir/DBPath:init 阶段按平台解析后回填
 	}

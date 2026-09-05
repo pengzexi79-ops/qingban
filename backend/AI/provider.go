@@ -60,18 +60,30 @@ type ChatResult struct {
 	ProviderRequestID string
 }
 
-// Client:某条 ApiProfile 对应的协议客户端(每次真实调用构建,不常驻避免密钥滞留)。
+// Client:某条模型配置对应的协议客户端(每次真实调用构建,不常驻避免密钥滞留)。
 type Client struct {
-	// Profile:使用的配置(含解密后密钥,仅调用生命周期内存活)。
-	Profile *model.ApiProfile
+	// Profile:使用的模型配置行(model_configs;仅调用生命周期内引用)。
+	Profile *model.ModelConfig
 	// SecretKey:解密后的明文密钥(用完即弃;空=本地模型无密钥)。
 	SecretKey string
 }
 
 // NewClient:构造协议客户端。
 // secret:服务层用 utils.SecretBox 解密后传入(服务层是唯一持有 SecretBox 的地方)。
-func NewClient(profile *model.ApiProfile, secret string) *Client {
+func NewClient(profile *model.ModelConfig, secret string) *Client {
 	return &Client{Profile: profile, SecretKey: secret}
+}
+
+// ModelInfo:供应商模型目录项(AI 侧 DTO;模型层不承载契约结构)。
+type ModelInfo struct {
+	// ID:模型 id(如 qwen2.5:7b)。
+	ID string
+	// Name:展示名(可读;缺省同 ID)。
+	Name string
+	// Capabilities:按模型名/元信息推断的能力标签(chat/streaming/vision/hearing/image 等)。
+	Capabilities []string
+	// Serving:本地是否已加载(Ollama /api/ps 语义;远程恒 true)。
+	Serving bool
 }
 
 // ChatOnce:非流式对话补全(同步发送链路与群聊轮次单成员发言用)。
@@ -109,14 +121,14 @@ func (c *Client) ChatStream(req ChatRequest, onDelta func(delta DeltaChunk) erro
 	return nil, nil // TODO(实现):见函数注释 ①~④
 }
 
-// ListModels:拉取模型目录并推断能力(供 /api-profiles/{id}/models 回显)。
+// ListModels:拉取端点模型目录并推断能力(供模型配置的"测试/选模型"回显)。
 // 推断规则(实现用):名称含 vision/qwen-vl/gpt-4o-mini → vision;tts/voice → tts;
 // stt/whisper → hearing;embedding/bge → embedding;否则至少 chat(+streaming)。
-func (c *Client) ListModels() ([]model.ModelInfo, error) {
-	// if c.Profile.Protocol == ProtoOllama { GET base/api/tags → models[] }   // Ollama 原生
-	// else { GET base/models → data[] }                                          // openai 兼容
+func (c *Client) ListModels() ([]ModelInfo, error) {
+	// if c.Profile.APIType == "ollama" { GET base/api/tags → models[] }        // Ollama 原生
+	// else { GET base/models → data[] }                                        // openai 兼容
 	// // 逐项:capabilities = inferCaps(name)(上表);serving = Ollama 时查 /api/ps 已加载
-	// return modelInfos, nil
+	// return infos, nil
 	return nil, nil // TODO(实现):见函数注释
 }
 

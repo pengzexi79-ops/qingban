@@ -13,30 +13,29 @@ import (
 // MemoryListQuery:GET /memories 查询参数(数据台)。
 type MemoryListQuery struct {
 	// CompanionId:按角色过滤(省略=全部角色含全局)。
-	CompanionId string `form:"companionId"`
+	CompanionId *uint `form:"companionId"`
 	// Q:文本关键词(标题/正文 LIKE;走 FTS 时忽略引用标记)。
 	Q string `form:"q"`
 	// Type:preference/event/relationship/summary 过滤。
 	Type string `form:"type"`
-	// Before/Limit:游标分页(默认按 date 倒序、created_at 兜底)。
-	Before string `form:"before"`
-	Limit  int    `form:"limit"`
+	// Before/Limit:游标分页(默认按 date 倒序、created_at 兜底;游标=上一页末条 id)。
+	Before uint `form:"before"`
+	Limit  int  `form:"limit"`
 }
 
 // hListMemories:GET /memories —— 记忆数据台列表(分页)。
 func hListMemories(c *gin.Context) {
 	// var q MemoryListQuery; c.ShouldBindQuery(&q)
 	// cur := parseCursor(q.Before, q.Limit)
-	// rows := db.Find(Memory{},
-	//     where: companion_id==q.CompanionId? AND type==q.Type? AND (q.Q=="" OR title LIKE OR content LIKE),
-	//     order: date DESC, created_at DESC, id DESC, 分页取 limit+1)
+	// rows := db.Model(&model.Memory{}).Where(q 过滤).
+	//     Order("date DESC, created_at DESC, id DESC").Limit(cur.Limit + 1).Find(&[]model.Memory{})
 	// respond(c, 200, pageOf(rows))                                    // 含 status/embeddingStatus 原样展示
 }
 
 // MemoryCreateReq:POST /memories 请求体。
 type MemoryCreateReq struct {
 	// CompanionId:归属角色;省略=全局记忆(用户偏好)。
-	CompanionId *string `json:"companionId"`
+	CompanionId *uint `json:"companionId"`
 	// Type:记忆类型(必填枚举)。
 	Type string `json:"type" binding:"required,oneof=preference event relationship summary"`
 	// Title:标题(≤28,必填)。
@@ -56,11 +55,11 @@ func hCreateMemory(c *gin.Context) {
 	// var req MemoryCreateReq; if !bind(c, &req) { return }
 	// if req.CompanionId != nil && !companionExists(*req.CompanionId) { respondErr(422, "角色不存在"); return }
 	// importance := 0.5; if req.Importance != nil { importance = clamp(*req.Importance, 0, 1) }
-	// m := Memory{ID: "memory-"+uuid4(), CompanionId: req.CompanionId, Type: req.Type,
-	//            Title: req.Title, Content: req.Content, Date: req.Date or today(local),
-	//            Source: req.Source or "手动添加", Importance: importance,
-	//            Status: confirmed, EmbeddingStatus: pending}
-	// db.Insert(&m)
+	// m := model.Memory{CompanionID: req.CompanionId, Type: req.Type,   // id 自增不赋
+	//     Title: req.Title, Content: req.Content, Date: req.Date or today(local),
+	//     Source: req.Source or "手动添加", Importance: importance,
+	//     Status: model.MemStatusConfirmed, EmbeddingStatus: model.EmbedPending}
+	// db.Create(&m)
 	// enqueueIndex(m.ID)                                               // 异步:ai.EmbedTexts→写向量行→indexed/failed(队列限并发)
 	// respond(c, 201, m)
 }
@@ -79,14 +78,14 @@ type MemoryUpdateReq struct {
 
 // hPatchMemory:PATCH /memories/:memoryId —— 编辑 / 确认候选。
 func hPatchMemory(c *gin.Context) {
-	// m := db.Find(Memory{id}); if nil { 404 }
+	// m := db.First(&model.Memory{}, parseUintParam(c, "memoryId")); if nil { 404 }
 	// var req MemoryUpdateReq; if !bind(c, &req) { return }
-	// if req.Status != nil && *req.Status == "confirmed" && m.Status == candidate {
-	//     m.Status = confirmed                                         // 候选转正式 → 参与后续注入
+	// if req.Status != nil && *req.Status == model.MemStatusConfirmed && m.Status == model.MemStatusCandidate {
+	//     m.Status = model.MemStatusConfirmed                           // 候选转正式 → 参与后续注入
 	// }
 	// if req.Type != nil { m.Type = *req.Type }; ... // title/content/date/source/importance 指针覆盖
-	// if 任一内容字段变更 { m.EmbeddingStatus = pending; enqueueIndex(m.ID) }  // 编辑触发重建
-	// m.UpdatedAt = now; db.Save(&m)
+	// if 任一内容字段变更 { m.EmbeddingStatus = model.EmbedPending; enqueueIndex(m.ID) }  // 编辑触发重建
+	// db.Save(&m)                                                      // UpdatedAt 由 gorm.Model 维护
 	// respond(c, 200, m)
 }
 
@@ -102,7 +101,7 @@ type MemorySearchReq struct {
 	// Query:检索原文(≤500,必填)。
 	Query string `json:"query" binding:"required,max=500"`
 	// CompanionId:限定角色(省略=全部)。
-	CompanionId string `json:"companionId"`
+	CompanionId *uint `json:"companionId"`
 	// TopK:返回条数(默认 8,最大 50)。
 	TopK int `json:"topK" binding:"omitempty,min=1,max=50"`
 	// Threshold:相似度阈值(默认 0.65)。

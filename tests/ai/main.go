@@ -26,18 +26,20 @@ func check(name string, cond bool, detail string) {
 	}
 }
 
-// makeMembers:造 n 个可预测 id 的角色。
+// makeMembers:造 n 个可预测 id(1..n)的角色。
 func makeMembers(n int) []model.Companion {
 	out := make([]model.Companion, 0, n)
 	for i := 0; i < n; i++ {
-		out = append(out, model.Companion{ID: fmt.Sprintf("companion-%02d", i), Name: "角色"})
+		m := model.Companion{Name: "角色"}
+		m.ID = uint(i) + 1
+		out = append(out, m)
 	}
 	return out
 }
 
 // ids:提取 id 列表(便于比对)。
-func ids(list []model.Companion) []string {
-	out := make([]string, 0, len(list))
+func ids(list []model.Companion) []uint {
+	out := make([]uint, 0, len(list))
 	for _, m := range list {
 		out = append(out, m.ID)
 	}
@@ -49,11 +51,11 @@ func main() {
 
 	// ---- turn(顺序)模式:取前 min(maxSpeakers, n) 且保序 ----
 	s := ai.SelectSpeakers(makeMembers(5), model.GroupStrategy{Mode: "turn", MaxSpeakers: 2}, nil)
-	check("select.turn", len(s) == 2 && s[0].ID == "companion-00" && s[1].ID == "companion-01", fmt.Sprint(ids(s)))
+	check("select.turn", len(s) == 2 && s[0].ID == 1 && s[1].ID == 2, fmt.Sprint(ids(s)))
 
 	// ---- random 模式:不重复、数量正确、同种子稳定 ----
 	s1 := ai.SelectSpeakers(members, model.GroupStrategy{Mode: "random", MaxSpeakers: 3}, rand.New(rand.NewSource(42)))
-	uniq := map[string]bool{}
+	uniq := map[uint]bool{}
 	allU := true
 	for _, m := range s1 {
 		if uniq[m.ID] {

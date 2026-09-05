@@ -22,3 +22,9 @@ var BuildTime = ""
 // 作用:Wails 壳注入前端 window.__QINBAN_API__ 的数据源;网页调试模式留空走同源。
 // 说明:端口顺延后由 init 在运行时回写此变量,使壳与日志拿到最终地址。
 var ExternalAPI = ""
+
+//服务器地址
+var SeverHost = ""
+
+//前端地址
+var AppHost = ""

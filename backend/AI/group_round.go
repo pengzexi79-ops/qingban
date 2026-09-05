@@ -19,8 +19,8 @@ import (
 
 // RoundResult:轮次创建结果(openapi RoundResult;轮次改为异步执行,响应即返回)。
 type RoundResult struct {
-	// RoundID:本轮唯一 id。
-	RoundID string `json:"roundId"`
+	// RoundID:本轮 id(rounds 自增主键,数字直出)。
+	RoundID uint `json:"roundId"`
 	// Status:running(已交棒调度引擎,整批投喂进行中;completed/cancelled 由事件流转)。
 	Status string `json:"status"`
 	// Messages:本轮产生的 AI 消息(异步执行,响应时为空;完成后经 round_message 事件逐条推送)。
@@ -45,8 +45,8 @@ type GroupRoundArgs struct {
 	Group model.Group
 	// Members:群内角色详情(前置校验用;实际投喂成员与各自配置由调度引擎现读)。
 	Members []model.Companion
-	// ConversationID:消息归属会话(=group.ID)。
-	ConversationID string
+	// ConversationID:消息归属会话(conversations.id;=群会话行 id,非 group.id)。
+	ConversationID uint
 	// Now:当前时刻(注入便于测试冷却)。
 	Now time.Time
 }
@@ -64,22 +64,22 @@ var groupLock = newGroupLocks()
 //	last := max(rounds 表 triggered_at, args.Group.LastRoundAt)  // ② 冷却(进程重启后依赖 DB 兜底)
 //	if args.Now.Sub(last) < strategy.cooldownSeconds { return err(CodeCooldownActive) }
 //	lock := groupLock.get(args.Group.ID); lock.Lock()            // ③ 防连点双轮(引擎侧另有 running 防重入)
-//	round := Round{RoundID: "round-" + uuid4(), GroupID: args.Group.ID,
-//	               TriggeredAt: args.Now, Status: running}       // ④ 落 Round(running)
-//	hub.Publish(EventRoundStart, {roundId, groupId, memberIds})  // ⑤
+//	round := model.Round{GroupID: args.Group.ID,                 // ④ 落 Round(running;id 自增)
+//	                      TriggeredAt: args.Now, Status: model.RoundRunning}
+//	db.Create(&round); hub.Publish(EventRoundStart, {roundId: round.ID, groupId, memberIds})  // ⑤
 //
 //	---- 交棒批次调度引擎(见 dispatch.go FlushConversation)----
 //	err := Dispatcher.FlushConversation(ctx, args.ConversationID, nil)   // ⑥ mentions=nil=点名全员
 //	//   引擎逐成员:读各自未读批(成员水位 member_cursors)→ 组上下文(短期记忆+本批)→ 调用;
-//	//   回复产出经 hooks.OnReply:落库 assistant 消息 → round.Speakers 追加 {sp.ID, msg.ID}
-//                               → hub.Publish(round_message + new_message);
+//	//   回复产出经 hooks.OnReply:落库 assistant 消息 → round_speakers 插入 {round, sp.ID, msg.ID}
+//	//                               → hub.Publish(round_message + new_message);
 //	//   静默产出经 hooks.OnSilent:不落消息不占 speakers(已读不回,消费水位照常推进);
 //	//   整批结束由装配层 hooks 收尾:round.Status=completed/EndedAt=now、group.LastRoundAt=now
 //	//                                → hub.Publish(round_end {roundId, messages})
 //	//   全员失败路径:round.Status=cancelled + CancelReason(COOLDOWN/成员不足/过程错误)
 //
 //	---- 响应 ----
-//	return &RoundResult{round.RoundID, running, nil, nil}, nil  // ⑦ 立即返回(异步执行)
+//	return &RoundResult{round.ID, running, nil, nil}, nil  // ⑦ 立即返回(异步执行)
 //
 // TODO(实现):见函数注释 ①~⑦
 func RunGroupRound(ctx context.Context, args GroupRoundArgs) (*RoundResult, error) {
@@ -109,17 +109,17 @@ func SelectSpeakers(members []model.Companion, strategy model.GroupStrategy, rng
 	return members[:limit]
 }
 
-// groupLocks:群互斥锁集合(懒加载,map[groupID]*sync.Mutex)。
+// groupLocks:群互斥锁集合(懒加载,map[groupID]*sync.Mutex;id 为 groups.id)。
 type groupLocks struct {
 	mu   sync.Mutex
-	keys map[string]*sync.Mutex
+	keys map[uint]*sync.Mutex
 }
 
 // newGroupLocks:构造锁集合。
-func newGroupLocks() *groupLocks { return &groupLocks{keys: map[string]*sync.Mutex{}} }
+func newGroupLocks() *groupLocks { return &groupLocks{keys: map[uint]*sync.Mutex{}} }
 
 // get:取某群锁(不存在则建)。
-func (g *groupLocks) get(groupID string) *sync.Mutex {
+func (g *groupLocks) get(groupID uint) *sync.Mutex {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if lk, ok := g.keys[groupID]; ok {

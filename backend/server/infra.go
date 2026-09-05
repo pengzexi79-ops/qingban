@@ -44,8 +44,8 @@ type BootstrapCounts struct {
 type BootstrapResp struct {
 	// FirstRun:true=显示首次引导;false=直接进主界面。
 	FirstRun bool `json:"firstRun"`
-	// UserID:当前用户 id(未初始化时省略)。
-	UserID string `json:"userId,omitempty"`
+	// UserID:当前用户 id(数字直出;未初始化时省略)。
+	UserID *uint `json:"userId,omitempty"`
 	// DataVersion:数据版本(未初始化时省略)。
 	DataVersion string `json:"dataVersion,omitempty"`
 	// Counts:实体计数(未初始化时省略)。
@@ -54,12 +54,12 @@ type BootstrapResp struct {
 
 // hGetBootstrap:GET /bootstrap —— 首次引导状态(开放端点)。
 func hGetBootstrap(c *gin.Context) {
-	// done := kvGet(KVBootstrapDone) == "1"           // kv 表单键读
+	// done := kvGet(model.KVBootstrapDone) == "1"       // config_kvs 表单键读(解密值)
 	// if !done { respond(c, 200, BootstrapResp{FirstRun: true}); return }
 	// resp := BootstrapResp{FirstRun: false}
-	// resp.UserID = firstUser().ID
-	// resp.DataVersion = kvGet(KVDataVersion)          // 缺省 "qingban_api_v1"
-	// resp.Counts = &BootstrapCounts{                  // 三表 COUNT
+	// u := firstUser(); resp.UserID = &u.ID             // 单行用户 id(恒 1)
+	// resp.DataVersion = kvGet(model.KVDataVersion)      // 缺省 "qingban_api_v1"
+	// resp.Counts = &BootstrapCounts{                    // 三表 COUNT
 	//     Companions: count(companions), Messages: count(messages), Memories: count(memories)}
 	// respond(c, 200, resp)
 }
@@ -75,20 +75,23 @@ type BootstrapInitReq struct {
 // hPostBootstrapInit:POST /bootstrap/init —— 初始化本地数据空间(幂等:二次调用 409)。
 func hPostBootstrapInit(c *gin.Context) {
 	// var req BootstrapInitReq; if !bind(c, &req) { return }        // 422
-	// if kvGet(KVBootstrapDone) == "1" { respondErr(409, CodeConflict, "本地空间已初始化"); return }
+	// if kvGet(model.KVBootstrapDone) == "1" { respondErr(409, CodeConflict, "本地空间已初始化"); return }
 	// tx {
-	//     db.Insert(&User{ID: "user-"+uuid4(), Nickname: "我", Settings: defaultSettings})   // ① 单行用户
-	//     seed := ApiProfile{ID: profile-, provider: "ollama", baseUrl: "http://localhost:11434",   // ② 种子 Ollama 配置
-	//                        protocol: ProtoOpenAI, name: "本地模型(Ollama)", region: "本地"}
-	//     db.Insert(&seed); kvSet(KVDefaultProfileID, seed.ID)
+	//     db.Create(&model.User{Nickname: "我", Settings: defaultSettings})   // ① 单行用户(id 自增=1)
+	//     seed := model.ModelConfig{Name: "local-ollama", DisplayName: "本地模型(Ollama)",
+	//         BaseURI: "http://localhost:11434/v1", APIType: "ollama",        // ② 种子配置
+	//         TextCompletion: true, Temperature: 0.7}
+	//     db.Create(&seed)
+	//     kvSet(model.KVDefaultModelConfigID, 数值/文本(seed.ID))            // 默认配置引用
 	//     if req.Mode == "import-demo" {                               // ③ 演示数据迁移(内核见 data.go)
 	//         if req.ImportPayload == nil { 422 "缺少导入文件"; rollback }
 	//         stats = importPayloadCore(req.ImportPayload)             // 不写迁移 kv
 	//     }
-	//     kvSet(KVBootstrapDone, "1"); kvSet(KVDataVersion, "qingban_api_v1")
+	//     kvSet(model.KVBootstrapDone, "1"); kvSet(model.KVDataVersion, "qingban_api_v1")
 	// }
 	// hub.Publish(EventSettingsChanged, {scope: "bootstrap"})          // ④ 已订阅前端刷新
-	// respond(c, 200, {userId, dataVersion: "qingban_api_v1", importStats: stats?, defaultApiProfileId})
+	// respond(c, 200, {userId: firstUser().ID, dataVersion: "qingban_api_v1",
+	//     importStats: stats?, defaultModelConfigId: seed.ID})
 }
 
 // hSSEEvents:GET /events —— 本地实时事件订阅(SSE 长连接)。

@@ -39,28 +39,30 @@ const (
 
 // ConvInfo:会话静态信息(每次投喂前现读,成员/冷却/配置改动即时生效)。
 type ConvInfo struct {
-	// Kind:companion(单聊)/group(群聊)。
+	// Kind:companion(单聊)/group(群聊)——由会话行归属(companion_id/group_id)推断。
 	Kind string `json:"kind"`
-	// MemberIDs:AI 成员 id(单聊=[companionId],群聊=全部 AI 成员)。
-	MemberIDs []string `json:"memberIds"`
+	// MemberIDs:AI 成员 id(companions.id;单聊=[会话归属角色],群聊=全部 AI 成员)。
+	MemberIDs []uint `json:"memberIds"`
 	// CooldownSeconds:群聊两轮投喂最小间隔(groups.strategy.cooldownSeconds)。
 	CooldownSeconds int `json:"cooldownSeconds"`
 }
 
 // DispatchRepo:调度引擎的持久化依赖面(单机 SQLite+GORM 基准)。
 type DispatchRepo interface {
-	// Conversation:会话信息(类型/成员/群冷却)。
-	Conversation(ctx context.Context, conversationID string) (ConvInfo, error)
+	// Conversation:会话信息(类型/成员/群冷却;conversationID=conversations.id)。
+	Conversation(ctx context.Context, conversationID uint) (ConvInfo, error)
 	// CompanionsByIDs:批量取角色(批次配置/静默开关/人设);未知 id 允许缺行。
-	CompanionsByIDs(ctx context.Context, ids []string) (map[string]model.Companion, error)
+	CompanionsByIDs(ctx context.Context, ids []uint) (map[uint]model.Companion, error)
 	// MessagesAfter:某会话 id>afterID 的消息(id 升序=时间正序)。
-	MessagesAfter(ctx context.Context, conversationID string, afterID uint) ([]model.Message, error)
-	// Cursor:某接收方已读水位(未找到 found=false,水位视为 0)。
-	Cursor(ctx context.Context, conversationID, readerID string) (model.MemberCursor, bool, error)
+	MessagesAfter(ctx context.Context, conversationID uint, afterID uint) ([]model.Message, error)
+	// MessageMentionIDs:某条消息的点名成员(群聊 user 消息;空=无点名)。
+	MessageMentionIDs(ctx context.Context, messageID uint) ([]uint, error)
+	// Cursor:某接收方已读水位(未找到 found=false,水位视为 0;readerID 用户=model.ReaderUserID)。
+	Cursor(ctx context.Context, conversationID, readerID uint) (model.MemberCursor, bool, error)
 	// SaveCursor:写入/推进已读水位。
 	SaveCursor(ctx context.Context, c model.MemberCursor) error
 	// Memory:某成员在某会话的短期记忆(无则 found=false)。
-	Memory(ctx context.Context, companionID, conversationID string) (model.ShortMemory, bool, error)
+	Memory(ctx context.Context, companionID, conversationID uint) (model.ShortMemory, bool, error)
 	// SaveMemory:覆盖写入新一期短期记忆。
 	SaveMemory(ctx context.Context, m model.ShortMemory) error
 	// SaveAssistantMessage:落库一条 AI 回复(引擎填归属与正文,接入层补 ID 后广播)。
@@ -74,13 +76,13 @@ type TurnRunner func(ctx context.Context, comp model.Companion, kind string, msg
 // DispatchHooks:引擎旁路回调(接入层注入;nil 自动跳过)。
 type DispatchHooks struct {
 	// OnRoundStart:一轮投喂开始(round_start 语义),参数 convID+目标成员。
-	OnRoundStart func(conversationID string, readerIDs []string)
+	OnRoundStart func(conversationID uint, readerIDs []uint)
 	// OnReply:AI 回复落库后回调(接入层广播 new_message)。
-	OnReply func(conversationID string, m model.Message)
+	OnReply func(conversationID uint, m model.Message)
 	// OnSilent:成员已读不回(诊断/审计,无前端事件)。
-	OnSilent func(conversationID, readerID string)
+	OnSilent func(conversationID, readerID uint)
 	// OnConsumed:成员消费推进到某水位(含静默/失败兜底;诊断/审计)。
-	OnConsumed func(conversationID, readerID string, throughID uint)
+	OnConsumed func(conversationID, readerID uint, throughID uint)
 	// LogError:非致命错误上报(接入层接 core.Log)。
 	LogError func(msg string, args ...any)
 }
@@ -107,29 +109,25 @@ func dueByBacklog(count, chars, maxCount, maxChars int) bool {
 	return false // TODO(实现)
 }
 
-// MentionReaderIDs:把消息 mentions 展开为"本批要投喂的成员"(设计 §3.1)。
+// MentionReaderIDs:把消息点名展开为"本批要投喂的成员"(设计 §3.1)。
 // 语义:
 //
-//	① mentions 为空 → 返回 nil(攒批路径由引擎决定全员);
-//	② 含 @所有人(model.MentionEveryone)→ 返回全部成员,everyone=true
-//	   (手动触发轮次"点名全员"同此语义);
-//	③ 逐个 id 与成员集合求交:交集外忽略(已退群/删号),重复 id 去重;
-//	④ 返回 targets 为空 = 点名的都不在群(调用方按忽略处理,消息仍作攒批内容)。
-func MentionReaderIDs(memberIDs, mentions []string) (targets []string, everyone bool) {
-	// members := set(memberIDs)
-	// for _, id := range mentions {
-	//     switch {
-	//     case id == model.MentionEveryone: return memberIDs, true     // ②
-	//     case members[id] && !seen[id]: targets = append(targets, id) // ③
-	//     }
+//	① mentionAll=true(@全员/手动触发轮次)→ 返回全部成员,everyone=true;
+//	② 否则把 mentions(被点名成员 id)与成员集合求交:交集外忽略(已退群/删号),去重;
+//	③ 返回 targets 为空 = 点名的都不在群(调用方按忽略处理,消息仍作攒批内容)。
+func MentionReaderIDs(memberIDs []uint, mentionAll bool, mentions []uint) (targets []uint, everyone bool) {
+	// if mentionAll { return memberIDs, true }                        // ①
+	// members := set(memberIDs); seen := map[uint]bool{}
+	// for _, id := range mentions {                                   // ②
+	//     if members[id] && !seen[id] { targets = append(targets, id); seen[id] = true }
 	// }
-	// return targets, false                                            // ④
-	return nil, false // TODO(实现):见函数注释 ①~④
+	// return targets, false                                           // ③
+	return nil, false // TODO(实现):见函数注释 ①~③
 }
 
 // convDebounce:会话级静默窗 = 成员配置的最小值(最"想及时回"的成员定节奏)。
 // 说明:单聊即该成员自身配置;comps 缺行(未知成员)回落 model.DefaultDebounceSeconds。
-func convDebounce(comps map[string]model.Companion, memberIDs []string) time.Duration {
+func convDebounce(comps map[uint]model.Companion, memberIDs []uint) time.Duration {
 	// best := model.DefaultDebounceSeconds
 	// for _, id := range memberIDs { if c, ok := comps[id]; ok { if s := cfg(c).DebounceSeconds; s>0 && s<best { best = s } } }
 	// return best * time.Second
@@ -139,7 +137,9 @@ func convDebounce(comps map[string]model.Companion, memberIDs []string) time.Dur
 // BuildBatchLines:未读批渲染为"一次性拼接文本"(设计 §2.2)。
 // 语义:
 //
-//	① 群聊每行 "[发送者]: 内容"(用户消息 sender 为空 → "我";@点名保留原文由模型理解);
+//	① 群聊每行 "[发送者名]: 内容"(用户消息发送者为空 → "我";@点名引用保留在正文原文,
+//	   @全员消息头部注记 [所有人]);发送者名由装配层按 SenderCompanionID 联查填充,
+//	   本函数接收已解析为"显示名"的轻量输入(见 composeBatchLines 的入参说明);
 //	② 单聊为裸文本多行(不需要前缀);
 //	③ 超过 maxChars 保留末尾 maxChars 字符(前段已被短期记忆覆盖,见 batchCharCap)。
 //
@@ -149,8 +149,8 @@ func BuildBatchLines(kind string, batch []model.Message, maxChars int) string {
 	// for _, m := range batch {                                // ① 逐条拼接
 	//     text := m.Content
 	//     if kind == "group" {
-	//         name := m.SenderID; if name == "" { name = "我" }
-	//         if len(m.Mentions) > 0 { text = "@" + join(m.Mentions, " @") + " " + text }
+	//         name := displayNameOf(m.SenderCompanionID); if name == "" { name = "我" }
+	//         if m.MentionAll { text = "[所有人] " + text }
 	//         b.WriteString("[" + name + "]: " + text + "\n")
 	//     } else { b.WriteString(text + "\n") }                // ② 单聊裸文本
 	// }
@@ -185,12 +185,12 @@ func composeTurnMessages(kind, memText, body string) []ChatMessage {
 // DispatchState:会话的进程内动态(待投/计时/点名队列/连败计数)。
 // 说明:消息本体与水位在 DB,进程重启后由 member_cursors 完全重建,本结构可丢。
 type DispatchState struct {
-	conversationID string
+	conversationID uint
 	kind           string
 	// pending:有待投批(用户新消息到达置位;整批投喂开始时清除)。
 	pending bool
 	// targetQueue:点名目标队列(点名撞群冷却时排队;放行后只投队列成员,不扩大为全员)。
-	targetQueue []string
+	targetQueue []uint
 	// lastUserMsgAt:最后一条用户消息到达时刻(静默窗起点;零值=无)。
 	lastUserMsgAt time.Time
 	// running:该会话正在投喂中(防重入;点名打断场景自然并入下一轮攒批)。
@@ -198,7 +198,7 @@ type DispatchState struct {
 	// lastFlushAt:最近一次投喂开始时刻(群冷却判断)。
 	lastFlushAt time.Time
 	// failStreak:每位成员连续失败次数(达上限→已读不回兜底)。
-	failStreak map[string]int
+	failStreak map[uint]int
 }
 
 // Dispatcher:批次调度引擎(进程内单例,init 装配期创建并 Start)。
@@ -211,9 +211,9 @@ type Dispatcher struct {
 	run   TurnRunner
 	now   func() time.Time
 	hooks DispatchHooks
-	// mu/states:会话状态表。
+	// mu/states:会话状态表(键=conversations.id)。
 	mu     sync.Mutex
-	states map[string]*DispatchState
+	states map[uint]*DispatchState
 	// wake/stop/wg:事件循环信号与退出编排。
 	wake chan struct{}
 	stop chan struct{}
@@ -246,38 +246,39 @@ func (d *Dispatcher) Close() {
 //
 //	① AI 消息(role=assistant)→ 只自然进入他人未读池,不置 pending(不催生新一轮);
 //	② 用户消息 → 置 pending、刷新 lastUserMsgAt,唤起事件循环(wakeLoop);
-//	③ 群聊且带 mentions → 异步走 FlushConversation(点名立即投喂,不等静默窗);
+//	③ 群聊用户消息且有点名(MentionAll 或 message_mentions 非空)→ 异步走
+//	   FlushConversation(点名立即投喂,不等静默窗);点名目标经 repo.MessageMentionIDs 读;
 //	④ 单聊无点名语义(@ 按普通文本),统一走攒批。
 func (d *Dispatcher) NotifyMessage(ctx context.Context, m model.Message) {
-	// if m.Role != RoleUser { return }                     // ①
-	// lock; st := stateLocked(m.ConversationID)            // ②
+	// if m.Role != "user" { return }                          // ①
+	// lock; st := stateLocked(m.ConversationID)                // ②
 	// st.pending = true; st.lastUserMsgAt = now(); unlock; wakeLoop()
-	// if len(m.Mentions) == 0 { return }
-	// go func() {                                          // ③
+	// if !m.MentionAll { ids, err := d.repo.MessageMentionIDs(ctx, m.ID); if len(ids) == 0 { return } }
+	// go func() {                                              // ③
 	//     info, err := repo.Conversation(ctx, m.ConversationID)
-	//     if err != nil || info.Kind != "group" { return } // ④ 单聊忽略点名
-	//     FlushConversation(ctx, m.ConversationID, m.Mentions)
+	//     if err != nil || info.Kind != "group" { return }     // ④ 单聊忽略点名
+	//     FlushConversation(ctx, m.ConversationID, m.MentionAll, ids)
 	// }()
 }
 
 // FlushConversation:立即投喂(手动触发轮次 POST /groups/{id}/rounds 与点名外部入口)。语义:
 //
-//	① mentions 为空 = 点名全员(手动触发轮次语义,绕过静默窗直接整批);
+//	① mentionAll=true 或 mentions 为空 = 点名全员(手动触发轮次语义,绕过静默窗直接整批);
 //	② 点名集合经 MentionReaderIDs 与成员求交:空交集 → 忽略(消息仍作攒批内容);
 //	③ 群冷却未到:点名目标入 targetQueue 等待引擎循环放行(不丢批,放行后只投队列);
 //	④ 冷却已过/无冷却:立即 flushOnce(targets)。
-func (d *Dispatcher) FlushConversation(ctx context.Context, conversationID string, mentions []string) error {
+func (d *Dispatcher) FlushConversation(ctx context.Context, conversationID uint, mentionAll bool, mentions []uint) error {
 	// info, err := repo.Conversation(ctx, conversationID); if err != nil { return err }
 	// targets := info.MemberIDs                              // ①
-	// if len(mentions) > 0 {
-	//     t, everyone := MentionReaderIDs(info.MemberIDs, mentions)  // ②
+	// if !mentionAll {
+	//     t, everyone := MentionReaderIDs(info.MemberIDs, false, mentions)  // ②
 	//     if len(t) == 0 && !everyone { return nil }
 	//     targets = t
 	// }
 	// lock; st := stateLocked(conversationID); st.kind = info.Kind
 	// if st.running { unlock; return nil }                   // 防重入:并入下一轮攒批
 	// if 群 && 距 st.lastFlushAt < cooldown {
-	//     if len(mentions) > 0 { st.targetQueue = appendUnique(st.targetQueue, targets...) } // ③
+	//     if !mentionAll { st.targetQueue = appendUnique(st.targetQueue, targets...) } // ③
 	//     unlock; wakeLoop(); return nil
 	// }
 	// unlock; flushOnce(st, info, targets)                   // ④
@@ -336,12 +337,12 @@ func (d *Dispatcher) maybeFlush(st *DispatchState) {
 // 语义:for each member { 读水位; MessagesAfter(水位后); 过滤本人发送; 统计 count/chars;
 //
 //	cfg := DispatchSettingsOf(comp); dueByBacklog(...) 任一满足即 true }。
-func (d *Dispatcher) backlogExceeded(ctx context.Context, st *DispatchState, info ConvInfo, comps map[string]model.Companion) (bool, error) {
+func (d *Dispatcher) backlogExceeded(ctx context.Context, st *DispatchState, info ConvInfo, comps map[uint]model.Companion) (bool, error) {
 	// for _, rid := range info.MemberIDs {
 	//     cur,_,_ := repo.Cursor(st.conversationID, rid)
 	//     msgs, err := repo.MessagesAfter(ctx, st.conversationID, cur.LastReadMessageID); if err != nil { return false, err }
 	//     n, chars := 0, 0
-	//     for _, m := range msgs { if m.SenderID == rid { continue }; n++; chars += RuneCount(m.Content) }
+	//     for _, m := range msgs { if m.SenderCompanionID != nil && *m.SenderCompanionID == rid { continue }; n++; chars += RuneCount(m.Content) }
 	//     if dueByBacklog(n, chars, cfg(comps[rid]).MaxBatchCount, cfg.MaxBatchChars) { return true, nil }
 	// }
 	// return false, nil
@@ -355,7 +356,7 @@ func (d *Dispatcher) backlogExceeded(ctx context.Context, st *DispatchState, inf
 //	③ for _, rid := range targets → replyAndConsume(rid):
 //	   读水位 → 读未读批(过滤本人)→ BuildBatchLines → 记忆区 → composeTurnMessages → run();
 //	④ targets 内成员缺失(已删)跳过并 LogError。
-func (d *Dispatcher) flushOnce(st *DispatchState, info ConvInfo, targets []string) {
+func (d *Dispatcher) flushOnce(st *DispatchState, info ConvInfo, targets []uint) {
 	// lock; if st.running { unlock; return }; st.running=true; st.lastFlushAt=now(); unlock  // ①
 	// defer func(){ lock; st.running=false; unlock; wakeLoop() }()
 	// ctx, cancel := context.WithTimeout(context.Background(), turnTimeout); defer cancel()
@@ -384,7 +385,7 @@ func (d *Dispatcher) flushOnce(st *DispatchState, info ConvInfo, targets []strin
 //	   + OnConsumed。已读消息自此永不重投。
 func (d *Dispatcher) replyAndConsume(ctx context.Context, st *DispatchState, info ConvInfo, comp model.Companion) error {
 	// cur,_,_ := repo.Cursor(ctx, st.conversationID, comp.ID)            // ①
-	// batch, through := 收集未读(msgs 过滤 SenderID==comp.ID,through=末条 id)
+	// batch, through := 收集未读(msgs 过滤 SenderCompanionID==comp.ID,through=末条 id)
 	// if len(batch) == 0 { return nil }
 	// cfg := DispatchSettingsOf(comp)
 	// body := BuildBatchLines(info.Kind, batch, min(cfg.MaxBatchChars, batchCharCap))  // ②
@@ -405,21 +406,21 @@ func (*errEmptyReplyType) Error() string { return "模型空输出且角色不�
 // scheduleSummary:消费后排定短期记忆总结(fireAt = now + kvTTL×0.8)。
 // 说明:期间新消费会再次调用本函数顺延窗口(厂商 KV 缓存已被刷新);
 // 到点执行见 summary.go 的 summaryLoop 与 RunSummaryJob。
-func (d *Dispatcher) scheduleSummary(companionID, conversationID string, kvTTLMinutes int) {
+func (d *Dispatcher) scheduleSummary(companionID, conversationID uint, kvTTLMinutes int) {
 	// if kvTTLMinutes <= 0 { kvTTLMinutes = model.DefaultKvTTLMinutes }
 	// lock; summaryDue[summaryKey(conversationID, companionID)] = now().Add(TTL * 8 / 10); unlock
 }
 
 // summaryKey:(会话,成员) 短期记忆任务键(分隔符 \x00 防拼接歧义)。
-func summaryKey(conversationID, companionID string) string {
-	// return conversationID + "\x00" + companionID
+func summaryKey(conversationID, companionID uint) string {
+	// return Itoa(conversationID) + "\x00" + Itoa(companionID)
 	return "" // TODO(实现)
 }
 
 // stateLocked:取(或建)会话状态;需持锁调用。
-func (d *Dispatcher) stateLocked(convID string) *DispatchState {
+func (d *Dispatcher) stateLocked(convID uint) *DispatchState {
 	// st, ok := d.states[convID]
-	// if !ok { st = &DispatchState{conversationID: convID, failStreak: map[string]int{}}; d.states[convID] = st }
+	// if !ok { st = &DispatchState{conversationID: convID, failStreak: map[uint]int{}}; d.states[convID] = st }
 	// return st
 	return nil // TODO(实现)
 }
@@ -430,7 +431,7 @@ func (d *Dispatcher) wakeLoop() {
 }
 
 // appendUnique:点名队列追加去重(队列长度 ≤ 成员数,O(n²) 可接受)。
-func appendUnique(dst []string, items ...string) []string {
+func appendUnique(dst []uint, items ...uint) []uint {
 	// for _, it := range items { if !contains(dst, it) { dst = append(dst, it) } }
 	// return dst
 	return nil // TODO(实现)
