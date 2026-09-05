@@ -17,6 +17,9 @@ type MessageCreateReq struct {
 	Content *string `json:"content" binding:"omitempty,max=5000"`
 	// ContentType:text/image/file/voice/video/mixed,默认 text。
 	ContentType string `json:"contentType" binding:"omitempty,oneof=text image file voice video mixed"`
+	// MentionIDs:显式点名成员 id 列表(群聊;前端已 @ 解析的场景可传此覆盖/并集,
+	// 否则后端按 utils.ParseMentions 从 content 解析)。
+	MentionIDs []string `json:"mentionIds,omitempty"`
 }
 
 // MessageSendResult:同步模式响应(openapi MessageSendResult)。
@@ -42,40 +45,38 @@ func hListMessages(c *gin.Context) {
 	// respond(c, 200, Page[Message]{items: rows, nextCursor: next})
 }
 
-// hSendMessage:POST /conversations/:conversationId/messages —— 发送(核心链路,SSE 或同步)。
+// hSendMessage:POST /conversations/:conversationId/messages —— 发送(批次调度语义)。
+// 流程(与 docs/batch_dispatch_design.md 对齐):
+//
+//	① 入参校验、@点名解析(utils.ParseMentions,显式 mentionIds 可覆盖),用户消息落库
+//	   (mentions 随行存储),刷新会话缓存行并广播 new_message —— 立即返回 201;
+//	② AI 的回复不再在本请求内同步产出:落库后经调度引擎(ai.Dispatcher)异步"攒批/点名
+//	   投喂",产出消息由 hooks 再广播 new_message(SSE 时序不变,前端无感);
+//	③ 单聊与群聊走同一入口:单聊无点名语义(全量攒批),群聊 @ 谁由引擎决定立即调度谁。
 func hSendMessage(c *gin.Context) {
 	// ---- 入参校验与用户消息落库 ----
 	// var req MessageCreateReq; if !bind(c, &req) { return }
 	// if req.ContentType == "" { req.ContentType = ContentText }
 	// text := ""; if req.Content != nil { text = *req.Content }
-	// refs, plain, err := utils.ParseRefs(text); if err != nil { 422 }
-	// for r := range refs { assertFileOwned(r.FileID, ScopeMessage) }  // fileId 存在且 scope=message
+	// refs, plain, err := utils.ParseRefs(text); if err != nil { 422 }   // 附件引用标记
 	// conv := db.Find(Conversation{id}); if nil { 404 }
-	// userMsg := Message{ID: message-, ConversationType: conv.Kind, ConversationId: conv.ID,
-	//                    Role: user, SenderId: currentUserID, Content: text,
-	//                    ContentType: req.ContentType, Refs: refs, Timestamp: now}
+	// mentions := resolveMentions(conv, plain, req.MentionIDs)           // ① 群聊点名解析:
+	//     //   单聊 → nil;群聊 → utils.ParseMentions(plain, 成员名→id 映射)
+	//     //   解析结果与请求体显式 mentionIds 并集;非法 id 过滤
+	// userMsg := Message{ConversationID: conv.ID, Role: RoleUser, Mentions: mentions,
+	//                    Content: text, ContentType: req.ContentType, Timestamp: now}
 	// db.Insert(&userMsg)
-	// refreshThreadCache(conv, last: &userMsg)                         // 缓存行 last_active/content/sender 刷新;自己的消息未读不加
-	// hub.Publish(EventNewMessage, {conversationId, message: userMsg}) // 多窗口即时可见
+	// refreshThreadCache(conv, last: &userMsg)                          // 自己的消息未读不加
+	// hub.Publish(EventNewMessage, {conversationId, message: userMsg})
+	// respond(c, 201, MessageSendResult{UserMessage: userMsg})          // 立即返回
 	//
-	// ---- 单聊 AI 回复(conv.Kind==companion 且角色存在) ----
-	// if conv.Kind == "companion" && companionOK(conv.ID) {
-	//     args := buildChatArgs(conv.ID, userMsg, plain)                // 读角色配置/用户画像/最近 N 轮历史
-	//     stream := isStreamRequest(c)
-	//     if stream {
-	//         // 广播 typing 后走 AI 流水线,回调把 delta 转 SSE:
-	//         //   SSE 序列:typing → delta* → message(完整助手消息) → memory_candidates → done
-	//         // 落库 AI 消息(streamed=true)后广播 new_message(双窗口同步)
-	//         streamChatReply(c, args, userMsg)
-	//         return
-	//     }
-	//     // 同步:阻塞调用 → 落库 → 组装 MessageSendResult
-	//     result := syncChatReply(args, userMsg)
-	//     respond(c, 201, result)                                       // 契约 201
-	//     return
-	// }
-	// // 群聊类型:本端点只收用户消息(发言经 /groups/rounds),无 AI 回复
-	// respond(c, 201, MessageSendResult{UserMessage: userMsg})
+	// ---- 调度:交棒给异步批次引擎(单聊/群聊统一) ----
+	// ai.Dispatch.NotifyMessage(ctx, userMsg)
+	//     // 引擎按设计 §3/§4 攒批或点名投喂;AI 回复落库后 hooks.OnReply →
+	//     // hub.Publish(new_message)(assistant 消息,流式与否由角色 ChatStyle 决定,
+	//     // 时序仍为 typing → delta* → message,但为异步到达)
+	//     // AI 允许静默(silent):不落库不广播(诊断走 OnSilent)
+	//     // 群聊 AI 成员的回复对其他成员是"新消息",自然进入他们的未读池
 }
 
 // hDeleteMessage:DELETE .../messages/:messageId —— 删除单条消息。

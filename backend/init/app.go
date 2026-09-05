@@ -35,11 +35,12 @@ func NewApp() (*App, error) {
 	// 逻辑:box, err := utils.LoadOrCreateBox(DataDir);err→fatal
 	// 说明:box 不设全局,由 api_profiles 服务经依赖注入闭包使用(避免全局明文句柄扩散)
 
-	// ========== 4. 打开 SQLite 并迁移建表 ==========
-	// 逻辑:gorm.Open(sqlite.Open(DBPath)?_busy_timeout=5000&_journal_mode=WAL)
-	// core.DB 赋值;执行 AutoMigrate 全部实体:
-	//   users/companions/groups/group_members/rounds/conversations/messages/
-	//   memories/files/usage_records/api_profiles/kvs
+// ========== 4. 打开 SQLite 并迁移建表 ==========
+// 逻辑:gorm.Open(sqlite.Open(DBPath)?_busy_timeout=5000&_journal_mode=WAL)
+// core.DB 赋值;执行 AutoMigrate 全部实体:
+//   users/companions/groups/group_members/rounds/conversations/messages/
+//   memories/files/usage_records/api_profiles/kvs
+//   member_cursors/chat_short_memories                ← 批次调度(见 model/cursor.go、chat_memory.go)
 	// 补充(代码位置,非 GORM 自动迁移,需原生 SQL):
 	//   ① 建 FTS5 虚拟表(消息/记忆全文检索):
 	//      CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages USING fts5(content, tokenize='unicode61')
@@ -62,8 +63,12 @@ func NewApp() (*App, error) {
 	// 逻辑:读取 {DataDir}/token.txt;不存在→生成 32 字节随机 hex 写盘(0600)
 	// 赋值:core.LocalToken
 
-	// ========== 7. 运行时对象 ==========
-	// 逻辑:core.Hub = core.NewSSEHub();core.Idem = core.NewIdemStore()
+// ========== 7. 运行时对象 ==========
+// 逻辑:core.Hub = core.NewSSEHub();core.Idem = core.NewIdemStore()
+// 追加(批次调度引擎,见 AI/dispatch.go 与 docs/batch_dispatch_design.md):
+//   repo := server.NewDispatchRepo(core.DB)             // DispatchRepo 的 GORM 实现(server 装配 TODO)
+//   ai.Dispatch = ai.NewDispatcher(repo, 装配后的 TurnRunner, server 组装的 DispatchHooks)
+//   说明:TurnRunner 在 Eino 装配(agent.go buildRuntime)后注入;此前 run=nil 降级只消费
 
 	// ========== 8. 路由注册 ==========
 	// 逻辑:engine := gin.New()(自带 Recovery);加载 server.RegisterRoutes(engine)

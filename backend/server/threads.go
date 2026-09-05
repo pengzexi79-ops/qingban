@@ -117,10 +117,15 @@ func hDeleteConversation(c *gin.Context) {
 	// respond(c, 204)
 }
 
-// hMarkConversationRead:POST /conversations/:conversationId/read —— 标记已读。
+// hMarkConversationRead:POST /conversations/:conversationId/read —— 标记已读(人侧)。
 func hMarkConversationRead(c *gin.Context) {
 	// conv := db.Find(Conversation{id})
-	// if conv != nil { conv.Unread = 0; db.Save(&conv) }                  // 不存在按 0 处理(允许前置调用)
+	// if conv != nil { conv.Unread = 0; db.Save(&conv) }                  // 会话级红点清零
+	// ---- 消息级"人已读"回执(设计 §2.1,可选实现)----
+	//  ① 推进人侧消费水位:Upsert(member_cursors{conv, ReaderUser,
+	//     LastReadMessageID: 该会话最后一条消息 id})(供"未读拼接"的对称语义,见 AI 包);
+	//  ② 批量回填 Message.user_read_at = now(role=assistant 且 user_read_at 为空的行);
+	//  ③ 群聊中 AI 成员视角不受影响(它们各自水位独立)。
 	// unreadTotal := db.Sum("SELECT COALESCE(SUM(unread),0) FROM conversations")
 	// hub.Publish(EventRead, {conversationId: param, unreadTotal})         // 多窗口即时同步
 	// respond(c, 200, {unreadTotal})
