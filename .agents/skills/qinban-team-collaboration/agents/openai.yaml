@@ -1,0 +1,4 @@
+interface:
+  display_name: "亲伴变更自动存档"
+  short_description: "按成员角色读取Git改动并自动生成独立开发保存点档案"
+  default_prompt: "使用 $qinban-team-collaboration 检查我本次实际 Git 改动，确认角色边界，并自动生成一份新的开发保存点档案。"
