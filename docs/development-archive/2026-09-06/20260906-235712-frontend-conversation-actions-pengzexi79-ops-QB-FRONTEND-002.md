@@ -60,4 +60,7 @@ change_fingerprint: "90c47f6421a0b9d320bd923c5e1ff92dabe2d7d8fe24a282c3e4d607a3b
 
 - 本分支基于最新 origin/master 开发。
 - 分支：codex/fe-exp/QB-FRONTEND-002。
-- 完成后将把 commit、远程分支和 PR 地址补回本档案。
+- commits：385d541 feat(frontend): add mobile conversation actions、2e6dc5a docs(collab): update frontend handoff archive。
+- 远程分支：origin/codex/fe-exp/QB-FRONTEND-002。
+- Pull Request：[#5 feat(frontend): continue mobile conversation experience](https://github.com/pengzexi79-ops/qingban/pull/5)。
+- 当前状态：已推送，等待审核人审核；审核通过后使用 **Squash and merge** 合并到 master。
