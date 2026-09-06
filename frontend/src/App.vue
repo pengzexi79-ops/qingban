@@ -32,7 +32,7 @@
     <aside class="sidebar">
       <div class="brand-lockup"><div class="brand-mark"><img src="/assets/qinban-icon.svg" alt="" /></div><div><div class="brand-name">亲伴</div><div class="brand-caption">让珍贵的记忆，继续陪伴</div></div></div>
       <nav class="primary-nav"><button v-for="item in navItems" :key="item.id" class="nav-link" :class="{active:activeView===item.id}" @click="navigate(item.id)"><span class="nav-icon" v-html="icon(item.icon)"></span><span>{{item.label}}</span></button></nav>
-      <div class="sidebar-footer"><div class="local-badge"><span class="status-dot"></span>前端原型 · 本机数据</div><button class="sidebar-help" @click="showAbout=true"><span v-html="icon('info')"></span>产品说明</button></div>
+      <div class="sidebar-footer"><div class="local-badge">前端原型 · 本机数据</div><button class="sidebar-help" @click="showAbout=true"><span v-html="icon('info')"></span>产品说明</button></div>
     </aside>
 
     <main class="workspace">

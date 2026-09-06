@@ -61,7 +61,7 @@ svg { display: block; width: 18px; height: 18px; }
 .nav-icon svg { width: 19px; height: 19px; }
 .nav-count, .mobile-nav em { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px; background: var(--coral); color: #fff; font-size: 10px; font-style: normal; }
 .sidebar-footer { margin-top: auto; padding: 0 8px; }
-.local-badge { display: flex; align-items: center; gap: 7px; padding: 10px 11px; color: var(--ink-soft); font-size: 11px; line-height: 1.45; background: #e8ebf4; border-radius: 12px; }
+.local-badge { padding: 10px 11px; color: var(--ink-soft); font-size: 11px; line-height: 1.45; background: #e8ebf4; border-radius: 12px; }
 .status-dot, .pulse-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(102,183,174,.12); }
 .sidebar-help { display: flex; align-items: center; gap: 8px; margin: 14px 4px 0; color: var(--ink-soft); font-size: 12px; background: transparent; }
 .sidebar-help span { color: var(--purple); }
@@ -751,8 +751,11 @@ body { background: var(--bg); color: var(--ink); font-size: 15px; }
 .sidebar-profile { margin: 30px 0 20px; border-radius: 8px; border-color: var(--line); box-shadow: none; }
 .user-avatar { border-radius: 9px; background: var(--purple); }
 .nav-link { min-height: 46px; padding: 0 13px; border-radius: 8px; color: var(--ink-soft); font-size: 15px; }
-.nav-link.active { color: #087f43; background: var(--purple-soft); box-shadow: none; }
-.nav-link:hover { color: var(--ink); background: #edf0f2; }
+.nav-link:hover { color: var(--ink); background: #e4e8ec; }
+.nav-link.active { color: #056b38; background: #bfe7cf; box-shadow: none; }
+.nav-link.active:hover { color: #056b38; background: #b3e3c6; }
+.theme-dark .nav-link:hover { color: var(--ink); background: #262a38; }
+.theme-dark .nav-link.active, .theme-dark .nav-link.active:hover { color: #8fe0ae; background: #1f4630; }
 .nav-icon svg { width: 20px; height: 20px; }
 .nav-count { background: var(--coral); }
 .local-badge { border-radius: 7px; background: #eef0f2; font-size: 12px; }
@@ -952,4 +955,5 @@ body { background: var(--bg); color: var(--ink); font-size: 15px; }
 .mine-simple-menu .menu-row:first-child { border-top: 0; }
 .mine-simple-menu .menu-row { min-height: 72px; }
 .mine-simple-menu .settings-icon { margin-right: 12px; }
+.menu-row .settings-icon { display: grid; place-items: center; }
 .utility-content .favorite-row small { display: block; margin-top: 7px; color: var(--muted); font-size: 11px; }
