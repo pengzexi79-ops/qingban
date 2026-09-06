@@ -34,13 +34,26 @@ const ICON_PATHS = {
 function icon(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name] || ICON_PATHS.sparkle}</g></svg>`; }
 function todayLabel() { return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
 
+// 头像首字母配色：默认浅色（白字），仅在背景过亮、白字对比度不足时改用深色，
+// 兼顾默认头像的浅色观感与自定义浅色背景的可读性。
+function avatarContrast(hex) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return '#ffffff';
+  let h = m[1];
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h, 16);
+  const lin = (shift) => { const c = ((n >> shift) & 255) / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin(16) + 0.7152 * lin(8) + 0.0722 * lin(0);
+  return L <= 0.40 ? '#ffffff' : '#1f2329';
+}
+
 const ChatView = {
   props: { thread: Object, companions: Array, messages: Array, isReplying: Boolean, inputMessage: String, apiActive: Boolean },
   emits: ['update-input', 'send', 'quick', 'proactive', 'back', 'open-settings', 'notice'],
   data() { return { voiceMode: false, showEmojiPanel: false, showMorePanel: false }; },
   methods: {
     icon,
-    avatarStyle(item) { return { backgroundColor: item?.color || '#776ee8' }; },
+    avatarStyle(item) { const bg = item?.color || '#776ee8'; return { backgroundColor: bg, color: avatarContrast(bg) }; },
     sender(message) { if (message.role === 'user') return { name: '我', initial: '我', color: '#776ee8' }; return this.thread.type === 'group' && message.senderId ? (this.companions.find(item => item.id === message.senderId) || this.thread) : this.thread; },
     formatMessageTime(timestamp) { return new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }); },
     toggleVoiceMode() { this.voiceMode = !this.voiceMode; this.showEmojiPanel = false; this.showMorePanel = false; },
@@ -148,7 +161,7 @@ export const appOptions = {
     lastMessageTime(thread){const t=thread.lastTimestamp||this.lastTimestamp(thread.messages);if(!t)return'';const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'});},
     formatRelativeTime(t){const d=Date.now()-Number(t||0);if(d<3600000)return`${Math.max(1,Math.floor(d/60000))} 分钟前`;if(d<86400000)return`${Math.floor(d/3600000)} 小时前`;return`${Math.floor(d/86400000)} 天前`;},
     scrollChatToBottom(){document.querySelectorAll('.chat-messages').forEach(item=>{item.scrollTop=item.scrollHeight;});},
-    avatarStyle(item){return{backgroundColor:item?.color||'#776ee8'};},
+    avatarStyle(item){const bg=item?.color||'#776ee8';return{backgroundColor:bg,color:avatarContrast(bg)};},
     userAvatarStyle(){return{};},
     memberNames(group){return(group.memberIds||[]).map(id=>this.companions.find(x=>x.id===id)?.name).filter(Boolean).join('、')||'尚未添加成员';},
     capabilityNames(item){const map={hearing:'听觉',tts:'语音',voiceClone:'声音复刻',vision:'视觉',video:'视频',imageGeneration:'生图',webSearch:'联网'};return Object.entries(item.capabilities||{}).filter(([,v])=>v).map(([k])=>map[k]).filter(Boolean);},
